@@ -1,8 +1,17 @@
-# Multi-Modal RAG Pipeline on Images and Text Locally
+# Multi-Modal RAG 
 
-<img src="RAG.jpg" alt="RAG Pipeline Banner" width="400" height="200"/>
+## 📑 Todo List
+- Multi Model RAG Pipeline
+   - [x] 小型pipeline完成
+   - [ ] 大一点的开源数据库
 
-This repository contains a Multi-Modal Retrieval-Augmented Generation (RAG) Pipeline that processes both images and text locally. It leverages advanced NLP and computer vision techniques to create a powerful information retrieval and generation system.
+- large language RAG 
+   - [x] xx 
+   - [ ]
+
+- Agentic RAG
+   - [] pipeline
+   
 
 ## 🌟 Features
 
@@ -11,6 +20,8 @@ This repository contains a Multi-Modal Retrieval-Augmented Generation (RAG) Pipe
 - CLIP image embedding for efficient image retrieval
 - Multi-modal index creation using LlamaIndex
 - Interactive query system with both text and image results
+
+
 
 ## 🚀 Quick Start
 
@@ -57,18 +68,7 @@ graph TD
     style D fill:#c83349,stroke:#333,stroke-width:2px
 ```
 
-## 🖼️ Example Queries
 
-Here are some example queries and their results:
-
-1. "Who is Naim?"
-   <img src="Naim.png" alt="Naim" width="400" height="200"/>
-
-2. "What is Ai?"
-   <img src="ai.png" alt="Ai" width="400" height="200"/>
-
-3. "Where is Space?"
-   <img src="space.png" alt="Space" width="400" height="200"/>
 
 ## 🛠️ Configuration
 
@@ -78,21 +78,9 @@ You can customize the pipeline by modifying the following parameters in `config.
 - `QDRANT_PATH`: Path for local Qdrant storage
 - `TOP_K`: Number of results to retrieve for each query
 
-## 📊 Performance
 
-The Multi-Modal RAG Pipeline offers:
 
-- Fast retrieval times (typically <100ms)
-- High accuracy in matching relevant images and text
-- Scalability to handle large datasets
 
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgements
 
@@ -100,10 +88,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Qdrant](https://github.com/qdrant/qdrant) for the vector database
 - [CLIP](https://github.com/openai/CLIP) for image embeddings
 
----
-
-<div align="center">
-  Made with ❤️ by <a href="https://github.com/naimkatiman">Naim Katiman</a>
-</div>
+📊 📄 🤝
 
 
