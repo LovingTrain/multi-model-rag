@@ -10,7 +10,7 @@
    - [ ]
 
 - Agentic RAG
-   - [] pipeline
+   - [] https://github.com/Alibaba-NLP/OmniSearch/tree/main
    
 
 ## 🌟 Features
