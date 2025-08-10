@@ -2,3 +2,10 @@ streamlit
 llama-index
 qdrant-client
 Pillow
+faiss-gpu
+ftfy 
+regex 
+tqdm
+pandas 
+pyarrow
+git+https://github.com/openai/CLIP.git
