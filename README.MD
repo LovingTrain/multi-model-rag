@@ -3,14 +3,13 @@
 ## 📑 Todo List
 - Multi Model RAG Pipeline
    - [x] 小型pipeline完成
-   - [ ] 大一点的开源数据库
+   - [x] 大一点的开源数据库--coco
+   - [x] 整理project的结构
+   - [ ] 尝试多线程并发，观察资源占用
 
-- large language RAG 
-   - [x] xx 
-   - [ ]
 
 - Agentic RAG
-   - [] pipeline
+   - [ ] pipeline
    
 
 ## 🌟 Features

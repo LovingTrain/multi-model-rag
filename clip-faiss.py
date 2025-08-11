@@ -1,3 +1,5 @@
+
+import os
 import torch
 import clip
 import faiss
@@ -5,12 +7,12 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import glob
-from tqdm import tqdm
-import os
-import os
 import json
 from tqdm import tqdm  # 用于显示漂亮的进度条
-from PIL import Image
+
+import concurrent.futures
+import time
+
 
 def convert_dataset_to_folder_format(
     annotations_file,
@@ -84,11 +86,13 @@ def convert_dataset_to_folder_format(
 
 # convert_dataset_to_folder_format(annotations_file, images_dir, output_dir)
 
+
 def process_embeddings():
     IMAGE_FOLDER = "/mnt/sdc/multi_model_data/data/coco-data/train2017_formatted"  # coco下载数据集的位置
     OUTPUT_FOLDER = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L"  # 输出索引和元数据的文件夹
     # CLIP_MODEL_PATH = "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/embedding-weight/ViT-B-32.pt"               # 提前下载好的 CLIP 模型
-    CLIP_MODEL_PATH = "/mnt/sdc/multi_model_data/weight/ViT-L-14.pt"               # 提前下载好的 CLIP 模型
+    # 提前下载好的 CLIP 模型
+    CLIP_MODEL_PATH = "/mnt/sdc/multi_model_data/weight/ViT-L-14.pt"
     BATCH_SIZE = 256                           # 批处理大小，根据您的 GPU 显存调整
 
     # --- 1. 初始化模型和设备 ---
@@ -100,7 +104,6 @@ def process_embeddings():
     # 加载 CLIP 模型和预处理器
     model, preprocess = clip.load(CLIP_MODEL_PATH, device=device, jit=False)
     print(f"模型 {CLIP_MODEL_PATH} 已加载到 {device}。")
-
 
     print("\n>>> 步骤 2: 生成图片 Embeddings...")
     if not os.path.exists(OUTPUT_FOLDER):
@@ -147,25 +150,27 @@ def process_embeddings():
     np.save(OUTPUT_FOLDER+"/all_embeddings.npy", all_embeddings)
 
     metadata_df = pd.DataFrame({'filepath': all_metadata})
-    metadata_output_path = os.path.join(OUTPUT_FOLDER, "all_metadata.feather") # [修正] 文件扩展名
+    metadata_output_path = os.path.join(
+        OUTPUT_FOLDER, "all_metadata.feather")  # [修正] 文件扩展名
     metadata_df.to_feather(metadata_output_path)
     print("embedding finished ~ ~")
 
 
 class FaissSearcher():
-    def __init__(self, embedding_path,metadata_path) -> None:
-        
+    def __init__(self, embedding_path, metadata_path) -> None:
+
         all_embeddings = np.load(embedding_path)
         self.metadata_df = pd.read_feather(metadata_path)
-        
+
         self.all_embeddings = all_embeddings
         N = all_embeddings.shape[0]
         self.split_idx = int(0.7 * N)
     # IVF 索引,有聚类
+
     def init_cpu_index(self):
         d = self.all_embeddings.shape[1]
         nlist = int(4 * np.sqrt(len(self.all_embeddings)))
-        quantizer = faiss.IndexFlatL2(d) 
+        quantizer = faiss.IndexFlatL2(d)
         cpu_index_ivfflat = faiss.IndexIVFFlat(
             quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT)
         # 需要先 train,训练索引 无监督的聚类，将数据划分成若干个分区。
@@ -174,8 +179,9 @@ class FaissSearcher():
         cpu_index_ivfflat.nprobe = 16
         return cpu_index_ivfflat
     # IVF 索引,有聚类
+
     def init_gpu_index(self):
-        
+
         cpu_index_ivfflat = self.init_cpu_index()
         # 准备 GPU 资源 (一次性)
         res = faiss.StandardGpuResources()
@@ -186,25 +192,23 @@ class FaissSearcher():
 
         return gpu_search_index
     #  Flat 索引——没有聚类，也没有 nprobe 的概念
+
     def init_hybrid_index(self):
 
-        
         data_cpu = self.all_embeddings[:self.split_idx, :]    # 前 70%
         data_gpu = self.all_embeddings[self.split_idx:, :]    # 后 30%
-        
+
         d = data_cpu.shape[1]
-        # 
+        #
         hybrid_cpu_index = faiss.IndexFlatL2(d)
         hybrid_cpu_index.add(data_cpu)
 
         res = faiss.StandardGpuResources()
 
-
         gpu_index_cpu_temp = faiss.IndexFlatL2(d)
         gpu_index_cpu_temp.add(data_gpu)
 
         hybrid_gpu_index = faiss.index_cpu_to_gpu(res, 0, gpu_index_cpu_temp)
-
 
         shard_index = faiss.IndexShards(d,
                                         threaded=False,     # 是否多线程
@@ -268,35 +272,33 @@ class FaissSearcher():
 
         return hybrid_index
 
-
-    def cpu_search(self,cpu_search_index,query_vector, k=5):
+    def cpu_search(self, cpu_search_index, query_vector, k=5):
 
         distances, indices = cpu_search_index.search(query_vector, k)
         self.print_search_results(distances, indices)
         # return distances, indices
 
-    def gpu_search(self,gpu_search_index, query_vector, k=5):
+    def gpu_search(self, gpu_search_index, query_vector, k=5):
 
         distances, indices = gpu_search_index.search(query_vector, k)
         self.print_search_results(distances, indices)
         # return distances, indices
 
-    def hybrid_search(self,shard_index, query_vector, k=5):
-        
+    def hybrid_search(self, shard_index, query_vector, k=5):
+
         distances, indices = shard_index.search(query_vector, k)
         self.print_search_results(distances, indices)
-        return distances, indices    
+        return distances, indices
 
-
-    def print_search_results(self,distances, indices,k=5):
+    def print_search_results(self, distances, indices, k=5):
         for i in range(k):
             idx = indices[0][i]
             filepath = self.metadata_df.iloc[idx]['filepath']
             similarity = distances[0][i]
             print(
                 f"  - 相似度: {similarity:.4f}, 路径: {os.path.basename(filepath)}")
-    
-    def llm_generation(self, query_text, retrieval_results,k=5):
+
+    def llm_generation(self, query_text, retrieval_results, k=5):
         '''
         带完善用Qwen generation,API ,还不行，图片没发送进去。
         '''
@@ -312,12 +314,12 @@ class FaissSearcher():
             # 我们只提取文件名，因为完整路径可能太长且包含不相关信息
             filename = os.path.basename(filepath)
             context_items.append(f"- 文件名: {filename} (相似度: {similarity:.4f})")
-        
+
         context_str = "\n".join(context_items)
         # 3. 精心构建 Prompt
         # System Prompt 定义了模型的角色和行为准则
         system_prompt = "你是一个智能的图片内容分析助手。你的任务是基于用户的问题和系统提供的相关图片文件列表，对这些图片的主题、内容或共同点进行推断和总结，并用自然、流畅的中文回答用户。"
-        
+
         # User Prompt 包含了用户的请求和我们提供的上下文
         user_prompt = f"""
                     用户的原始问题是："{query_text}"
@@ -337,48 +339,69 @@ class FaissSearcher():
         )
 
         return response.output.text
-    
 
 
 class EmbeddingMode():
     def __init__(self):
         model_path = "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/embedding-weight/ViT-B-32.pt"
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        embedding_model, preprocess = clip.load(model_path, device=device, jit=False)
+        embedding_model, preprocess = clip.load(
+            model_path, device=device, jit=False)
 
         self.model = embedding_model
         self.preprocess = preprocess
         self.device = device
-    
-    def encoding_query_text(self,query_text):
+
+    def encoding_query_text(self, query_text):
         tokenized_text = clip.tokenize([query_text]).to(self.device)
         with torch.no_grad():
             query_vector = self.model.encode_text(tokenized_text)
         query_vector = query_vector.cpu().numpy().astype(np.float32)
         faiss.normalize_L2(query_vector)
         return query_vector
-    
-    def encoding_query_image(self,query_img_path):
-        query_img =  self.preprocess(Image.open(query_img_path)).unsqueeze(0).to(self.device)
+
+    def encoding_query_image(self, query_img_path):
+        query_img = self.preprocess(Image.open(
+            query_img_path)).unsqueeze(0).to(self.device)
         with torch.no_grad():
             query_vector = self.model.encode_image(query_img)
         query_vector = query_vector.cpu().numpy().astype(np.float32)
         faiss.normalize_L2(query_vector)
         return query_vector
 
+
 EMBEDDING_FILE = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017/all_embeddings.npy"
 METADATA_FILE = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017/all_metadata.feather"
 
 searcher = FaissSearcher(EMBEDDING_FILE, METADATA_FILE)
 cpu_index = searcher.init_cpu_index()
-gpu_index = searcher.init_gpu_index()    
+gpu_index = searcher.init_gpu_index()
 
-## 怎么并行？
-encoder= EmbeddingMode()
-print(f"begin rag !")
-query_text_1 = "a dog playing on the beach"
-query_vector_1 = encoder.encoding_query_text(query_text_1)
+encoder = EmbeddingMode()
+print("索引已创建，开始并行处理查询...")
 
-query_vector_2 =  encoder.encoding_query_image("/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/data/small/space.png")
-searcher.cpu_search(cpu_index,query_vector_1)
-searcher.gpu_search(gpu_index,query_vector_2)
+queries = [
+    {"type": "text", "content": "a dog playing on the beach"},
+    {"type": "image", "content": "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/data/small/space.png"},
+    {"type": "text", "content": "sunset over mountains"},
+    {"type": "image", "content": "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/data/small/city.png"}
+]
+# 定义一个函数，用于处理单个查询
+
+
+def process_single_query(query):
+    if query["type"] == "text":
+        query_vector = encoder.encoding_query_text(query["content"])
+        print(f"\n[并行查询-文本] {query['content']}")
+        distances, indices = searcher.cpu_search(cpu_index, query_vector)
+
+    elif query["type"] == "image":
+        query_vector = encoder.encoding_query_image(query["content"])
+        print(f"\n[并行查询-图片] {query['content']}")
+        distances, indices = searcher.gpu_search(gpu_index, query_vector)
+
+
+# 使用线程池并行执行
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    futures = [executor.submit(process_single_query, q) for q in queries]
+    concurrent.futures.wait(futures)
