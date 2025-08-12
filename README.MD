@@ -1,30 +1,22 @@
 # Multi-Modal RAG 
 
 ## 📑 Todo List
-- Multi Model RAG Pipeline
+- 👉 Multi Model RAG Pipeline
    - [x] 小型pipeline完成
    - [x] 大一点的开源数据库--coco
    - [x] 整理project的结构
-   - [x] 尝试多线程并发，观察资源占用
-   - 
+   - [x] 尝试多线程并发，观察资源占用 >>>
+   
 
 
 
-- Agentic RAG
+- ⭐ Agentic RAG 
    - [ ] pipeline
    
 - 复杂度不够 烦🤦‍♀️
    - [x] 大一点的开源数据库--laion-2B
-   - [ ] 不同类型的query多线程并发，观察资源占用
+   - [ ] ❗不同类型的query多线程并发，观察资源占用
    - [ ] 大的embedding 模型
-## 🌟 Features
-
-- Local processing of images and text
-- Integration with Qdrant vector store
-- CLIP image embedding for efficient image retrieval
-- Multi-modal index creation using LlamaIndex
-- Interactive query system with both text and image results
-
 
 
 ## 🚀 Quick Start
@@ -40,14 +32,7 @@
    pip install -r requirements.txt
    ```
 
-3. Prepare your data:
-   - Place your image files (.jpg or .png) in the `data` directory
-   - Ensure corresponding text files (.txt) with the same name exist for each image
 
-4. Run the pipeline:
-   ```python
-   python myRAG.ipynb
-   ```
 
 ## 📚 How It Works
 
