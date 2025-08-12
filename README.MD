@@ -5,13 +5,18 @@
    - [x] 小型pipeline完成
    - [x] 大一点的开源数据库--coco
    - [x] 整理project的结构
-   - [ ] 尝试多线程并发，观察资源占用
+   - [x] 尝试多线程并发，观察资源占用
+   - [ ] 复杂度不够 烦si🤦‍♀️
+
 
 
 - Agentic RAG
    - [ ] pipeline
    
-
+- 复杂度不够 烦si🤦‍♀️
+   - [x] 大一点的开源数据库--laion-2B
+   - [ ] 不同类型的query多线程并发，观察资源占用
+   - [ ] 大的embedding 模型
 ## 🌟 Features
 
 - Local processing of images and text
