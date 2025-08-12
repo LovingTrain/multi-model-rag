@@ -3,47 +3,58 @@ from src.search_faiss import FaissSearcher
 from src.encode_mode import EmbeddingMode
 import concurrent.futures
 import time
-
-def main():
-    # 可以在这里调用上面导入的函数或类
-    # 例如:
-    convert_dataset_to_folder_format(...)
-    process_embeddings(...)
-
-    searcher = FaissSearcher(embedding_path="/path/to/all_embeddings.npy",
-                             metadata_path="/path/to/all_metadata.feather")
+def get_index():
+    EMBEDDING_FILE = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_embeddings.npy"
+    METADATA_FILE = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_metadata.feather"
+    searcher = FaissSearcher(embedding_path = EMBEDDING_FILE,
+                                metadata_path = METADATA_FILE)
+    
     cpu_index = searcher.init_cpu_index()
     gpu_index = searcher.init_gpu_index()
-    encoder = EmbeddingMode()
-    print("索引已创建，开始并行处理查询...")
-
-
+    hybrid_index = searcher.init_hybrid_index()
+    hybrid_ivf_index = searcher.init_hybrid_index_ivf()
+    return cpu_index,gpu_index,hybrid_index,hybrid_ivf_index
+def main(encoder,cpu_index,gpu_index,hybrid_index,hybrid_ivf_index):
+    start= time.time()
     queries = [
-        {"type": "text", "content": "a dog playing on the beach"},
-        {"type": "image", "content": "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/data/small/space.png"},
-        {"type": "text", "content": "sunset over mountains"},
-        {"type": "image", "content": "/home/wangjingjing/SimpleRAG/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally/data/small/city.png"}
+        {"type": "text","search_type": "cpu", "content": "a dog playing on the beach"},
+        {"type": "image","search_type": "gpu", "content": "/home/wangjingjing/SimpleRAG/Locally/data/small/ai.png"},
+        {"type": "text","search_type": "hybrid", "content": "a dog playing on the beach"},
+        {"type": "image","search_type": "hybrid_ivf", "content": "/home/wangjingjing/SimpleRAG/Locally/data/small/ai.png"}
     ]
     # 定义一个函数，用于处理单个查询
-
-
+    
+    
     def process_single_query(query):
         if query["type"] == "text":
             query_vector = encoder.encoding_query_text(query["content"])
             print(f"\n[并行查询-文本] {query['content']}")
-            distances, indices = searcher.cpu_search(cpu_index, query_vector)
-
+            if query["search_type"] !="cpu" :
+                distances, indices = searcher.cpu_search(hybrid_index, query_vector,k=5)
+            else :
+                distances, indices = searcher.hybrid_search(cpu_index, query_vector,k=5)
+    
         elif query["type"] == "image":
             query_vector = encoder.encoding_query_image(query["content"])
             print(f"\n[并行查询-图片] {query['content']}")
-            distances, indices = searcher.gpu_search(gpu_index, query_vector)
-
-
-    # 使用线程池并行执行
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(process_single_query, q) for q in queries]
-        concurrent.futures.wait(futures)
+            
+            if query["search_type"] =="gpu" :
+                distances, indices = searcher.gpu_search(gpu_index, query_vector,k=5)
+            else :
+                distances, indices = searcher.hybrid_search (hybrid_ivf_index, query_vector,k=5)
+    
+    # 线程池之前，先验证是否有问题
+    for q in queries:
+        process_single_query(q)
+    # # 使用线程池并行执行.执行失败是看不出来的
+    # with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+    #     futures = [executor.submit(process_single_query, q) for q in queries]
+    #     concurrent.futures.wait(futures)
+    end= time.time()
+    print(f"cost time {end-start} s")
 
 
 if __name__ == "__main__":
+    cpu_index,gpu_index,hybrid_index,hybrid_ivf_index = get_index()
+    encoder = EmbeddingMode()
     main()
