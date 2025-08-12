@@ -19,6 +19,7 @@ class FaissSearcher():
         self.all_embeddings = all_embeddings
         N = all_embeddings.shape[0]
         self.split_idx = int(0.7 * N)
+        self.nprobe =128
     # IVF 索引,有聚类
 
     def init_cpu_index(self):
@@ -30,7 +31,7 @@ class FaissSearcher():
         # 需要先 train,训练索引 无监督的聚类，将数据划分成若干个分区。
         cpu_index_ivfflat.train(self.all_embeddings)
         cpu_index_ivfflat.add(self.all_embeddings)
-        cpu_index_ivfflat.nprobe = 16
+        cpu_index_ivfflat.nprobe = self.nprobe
         return cpu_index_ivfflat
     # IVF 索引,有聚类
 
@@ -42,7 +43,7 @@ class FaissSearcher():
 
         gpu_search_index = faiss.index_cpu_to_gpu(
             res, 0, cpu_index_ivfflat)
-        gpu_search_index.nprobe = 16
+        gpu_search_index.nprobe = self.nprobe
 
         return gpu_search_index
     #  Flat 索引——没有聚类，也没有 nprobe 的概念
@@ -64,9 +65,7 @@ class FaissSearcher():
 
         hybrid_gpu_index = faiss.index_cpu_to_gpu(res, 0, gpu_index_cpu_temp)
 
-        shard_index = faiss.IndexShards(d,
-                                        threaded=False,     # 是否多线程
-                                        successive_ids=True)  # 是否按顺序合并ID
+        shard_index = faiss.IndexShards(d)  # 是否按顺序合并ID,现在的版本不支持 successive_ids=True
         shard_index.add_shard(hybrid_cpu_index)
         shard_index.add_shard(hybrid_gpu_index)
 
@@ -94,7 +93,7 @@ class FaissSearcher():
 
         # 2. 创建一个分片索引，并设置 ID 自动连续
         hybrid_index = faiss.IndexShards(
-            d, threaded=False, successive_ids=True)
+            d) #,  successive_ids=True
 
         # 3. 训练和添加数据
         split_idx = int(0.7 * len(self.all_embeddings))
@@ -111,14 +110,14 @@ class FaissSearcher():
 
         print("向 CPU 分片添加数据...")
         cpu_shard.add(data_cpu)
-        cpu_shard.nprobe = 16
+        cpu_shard.nprobe = self.nprobe
 
         print("向 GPU 分片添加数据...")
         gpu_shard_cpu_version.add(data_gpu)
 
         # 将 GPU 分片从 CPU 转换到 GPU
         gpu_shard = faiss.index_cpu_to_gpu(res, 0, gpu_shard_cpu_version)
-        gpu_shard.nprobe = 16
+        gpu_shard.nprobe = self.nprobe
 
         # 4. 将两个分片添加到主索引中
         hybrid_index.add_shard(cpu_shard)
@@ -130,13 +129,13 @@ class FaissSearcher():
 
         distances, indices = cpu_search_index.search(query_vector, k)
         self.print_search_results(distances, indices)
-        # return distances, indices
+        return distances, indices
 
     def gpu_search(self, gpu_search_index, query_vector, k=5):
 
         distances, indices = gpu_search_index.search(query_vector, k)
         self.print_search_results(distances, indices)
-        # return distances, indices
+        return distances, indices
 
     def hybrid_search(self, shard_index, query_vector, k=5):
 
