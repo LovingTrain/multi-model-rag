@@ -1,14 +1,16 @@
 
+import glob
+import json
+import os
+
+import clip
+import faiss
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
-import os
-import json
 import torch
-import clip
-import glob
 from PIL import Image
-import faiss
+from tqdm import tqdm
+
 from .encode_mode import EmbeddingMode
 
 

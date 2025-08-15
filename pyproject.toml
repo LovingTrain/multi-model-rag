@@ -1,0 +1,27 @@
+[project]
+name = "multi-model-rag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10, <3.12"
+dependencies = [
+    "clip>=1.0",
+    "faiss-gpu>=1.7.2",
+    "ftfy>=6.3.1",
+    "llama-index>=0.13.1",
+    "pandas>=2.2.3",
+    "pillow>=11.3.0",
+    "pyarrow>=21.0.0",
+    "qdrant-client>=1.15.1",
+    "regex>=2025.7.33",
+    "streamlit>=1.48.1",
+    "tqdm>=4.67.1",
+    "numpy<2"
+]
+
+[[tool.uv.index]]
+url = "http://mirrors.aliyun.com/pypi/simple/"
+default = true
+
+[tool.uv.sources]
+clip = { git = "https://github.com/openai/CLIP.git" }

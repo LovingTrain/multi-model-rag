@@ -1,12 +1,13 @@
+import glob
+import json
 import os
-import torch
+
 import clip
 import faiss
 import numpy as np
 import pandas as pd
+import torch
 from PIL import Image
-import glob
-import json
 from tqdm import tqdm
 
 

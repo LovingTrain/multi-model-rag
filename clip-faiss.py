@@ -1,17 +1,17 @@
 
+import concurrent.futures
+import glob
+import json
 import os
-import torch
+import time
+
 import clip
 import faiss
 import numpy as np
 import pandas as pd
+import torch
 from PIL import Image
-import glob
-import json
 from tqdm import tqdm  # 用于显示漂亮的进度条
-
-import concurrent.futures
-import time
 
 
 def convert_dataset_to_folder_format(
