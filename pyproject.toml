@@ -16,7 +16,8 @@ dependencies = [
     "regex>=2025.7.33",
     "streamlit>=1.48.1",
     "tqdm>=4.67.1",
-    "numpy<2"
+    "numpy<2",
+    "mcp>=1.13.0",
 ]
 
 [[tool.uv.index]]
