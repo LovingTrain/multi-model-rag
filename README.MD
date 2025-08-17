@@ -14,9 +14,10 @@
 
 
 - 复杂度不够 烦🤦‍♀️
-   - [x] 大一点的开源数据库--laion-2B
-   - [ ] ❗不同类型的query多线程并发，观察资源占用
-   - [ ] 大的embedding 模型
+   - [x] 大一点的开源数据库
+   - [ ] ❗已有模型的压力测试
+   - [ ] graph rag pipeline
+   - [ ] agentic rag pipeline
 
 
 - 🐱‍🏍 臭老哥的To-do-list 
@@ -26,10 +27,7 @@
 
 ## 🚀 Quick Start
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/naimkatiman/Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally.git
-   cd Multi-Modal-RAG-Pipeline-on-Images-and-Text-Locally
+
    ```
 
 2. Install dependencies:
