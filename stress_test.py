@@ -1,69 +1,366 @@
+# rag_bench.py
+import os
 import time
-import multiprocessing
+import argparse
+from typing import List, Dict, Tuple
+import numpy as np
+import matplotlib.pyplot as plt
+
+import torch  # 仅用于 cuda 同步
+
 from src.encode_mode import EmbeddingMode
 from src.search_faiss import FaissSearcher
 
 
-class PipelineRAG():
-    def __init__(self, embedding_file_path, metadata_file_path, embedding_model_path, search_type):
+def now() -> float:
+    return time.perf_counter()
 
+
+def maybe_cuda_sync():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def p95(arr: List[float]) -> float:
+    if not arr:
+        return float("nan")
+    return float(np.percentile(np.asarray(arr, dtype=float), 95))
+
+
+class PipelineRAG:
+    def __init__(
+        self,
+        embedding_file_path: str,
+        metadata_file_path: str,
+        embedding_model_path: str,
+        search_type: str = "gpu",
+        top_k: int = 10,
+    ):
         self.embedding_model = EmbeddingMode(model_path=embedding_model_path)
-        self.searcher = FaissSearcher(embedding_path=embedding_file_path,
-                                      metadata_path=metadata_file_path)
-        self.index = self.searcher.init_gpu_index()  # 多态
-        print("init finished ~ ")
+
+        self.searcher = FaissSearcher(
+            embedding_path=embedding_file_path,
+            metadata_path=metadata_file_path,
+        )
+        self.search_type = search_type
+        self.top_k = top_k
 
         if search_type == "cpu":
-            index = self.searcher.init_cpu_index()
+            self.index = self.searcher.init_cpu_index()
         elif search_type == "gpu":
-            index = self.searcher.init_gpu_index()
+            self.index = self.searcher.init_gpu_index()
         elif search_type == "hybrid":
-            index = self.searcher.init_hybrid_index()
+            self.index = self.searcher.init_hybrid_index()
         elif search_type == "hybrid_ivf":
-            index = self.searcher.init_hybrid_index_ivf()
+            self.index = self.searcher.init_hybrid_index_ivf()
         else:
             raise ValueError(f"不支持的 search_type: {search_type}")
-        self.index = index
-        self.search_type = search_type
 
-    def batch_rag(self, query, query_type):
-        start = time.time()
+        # 尝试拿到库向量的维度，为 search-only 生成假查询时用
+        try:
+            self.dim = int(self.searcher.all_embeddings.shape[1])
+        except Exception:
+            self.dim = None
+
+        print(f"[Init] search_type={search_type} 初始化完成。")
+
+    # ====== 统一适配区：根据你的真实 API 改这两处 ======
+    def _encode(self, queries, query_type: str) -> np.ndarray:
         if query_type == "text":
-            query_vector = self.encoder.encoding_query_text(query)
+            vecs = self.embedding_model.encoding_query_text(queries)
         elif query_type == "image":
-            query_vector = self.encoder.encoding_query_batch_images(
-                query)
+            vecs = self.embedding_model.encoding_query_image(queries)
+        else:
+            raise ValueError(f"不支持的 query_type: {query_type}")
+
+        if hasattr(vecs, "detach"):
+            vecs = vecs.detach().cpu().numpy()
+        elif isinstance(vecs, list):
+            vecs = np.asarray(vecs, dtype=np.float32)
+        return vecs.astype(np.float32)
+
+    def _search(self, q: np.ndarray):
         if self.search_type == "cpu":
-            _, _ = self.searcher.cpu_search()
+            return self.searcher.cpu_search(self.index, q)
         elif self.search_type == "gpu":
-            _, _ = self.searcher.gpu_search()
+            return self.searcher.gpu_search(self.index, q)
         elif self.search_type == "hybrid":
-            _, _ = self.searcher.cpu_search()
+            return self.searcher.hybrid_search(self.index, q)
         elif self.search_type == "hybrid_ivf":
-            _, _ = self.searcher.cpu_search()
+            return self.searcher.hybrid_ivf_search(self.index, q)
         else:
             raise ValueError(f"不支持的 search_type: {self.search_type}")
-        end = time.time()
+    # =====================================================
 
-        return (end - start)/query.shape[0]
+    # -------- 三种测量原语 --------
+    def measure_embedding_only(self, queries, query_type: str) -> float:
+        maybe_cuda_sync()
+        t0 = now()
+        _ = self._encode(queries, query_type)
+        maybe_cuda_sync()
+        return now() - t0
 
-# --- 步骤3: 修改主函数以启动多进程 ---
+    def measure_search_only(self, query_vectors: np.ndarray) -> float:
+        maybe_cuda_sync()
+        t0 = now()
+        _ = self._search(query_vectors)
+        maybe_cuda_sync()
+        return now() - t0
+
+    def measure_end2end(self, queries, query_type: str) -> Tuple[float, float, float]:
+        maybe_cuda_sync()
+        t0 = now()
+        qv = self._encode(queries, query_type)
+        maybe_cuda_sync()
+        t1 = now()
+        _ = self._search(qv)
+        maybe_cuda_sync()
+        t2 = now()
+        return (t2 - t0, t1 - t0, t2 - t1)  # total, encode, search
+
+
+def expand_batch(base_samples: List, bsz: int) -> List:
+    # 简单扩增样本；如需真实不同样本，替换此函数即可
+    return base_samples * bsz
+
+
+def make_search_only_queries(
+    pipeline: PipelineRAG,
+    bsz: int,
+    source: str = "encode",  # 'encode' | 'gaussian' | 'db_sample'
+    text_seed: str = "a dog playing on the beach"
+) -> np.ndarray:
+    """
+    生成供 search-only 使用的查询向量：
+    - encode   : 先编码再用，同维度分布最贴近真实请求（推荐）
+    - gaussian : N(0,1) 采样后做 L2 归一化（需要 dim）
+    - db_sample: 从库向量中抽样并加极小噪声，避免查询=库项
+    """
+    if source == "encode":
+        q = expand_batch([text_seed], bsz)
+        return pipeline._encode(q, query_type="text")
+
+    if source == "gaussian":
+        assert pipeline.dim is not None, "未知维度，无法生成高斯查询"
+        q = np.random.randn(bsz, pipeline.dim).astype(np.float32)
+        # 归一化（若索引用内积/余弦，这样更稳定）
+        norm = np.linalg.norm(q, axis=1, keepdims=True) + 1e-9
+        return (q / norm).astype(np.float32)
+
+    if source == "db_sample":
+        emb = pipeline.searcher.all_embeddings
+        idx = np.random.choice(emb.shape[0], size=bsz, replace=False)
+        q = emb[idx].astype(np.float32).copy()
+        q += np.random.normal(0, 1e-3, size=q.shape).astype(np.float32)
+        return q
+
+    raise ValueError(f"未知 source: {source}")
+
+
+def run_benchmark(
+    pipeline: PipelineRAG,
+    mode: str,                         # 'end2end' | 'embedding' | 'search'
+    base_queries: List[str],
+    query_type: str,
+    batch_sizes: List[int],
+    repeats: int,
+    warmup: int,
+    search_only_source: str = "encode"
+) -> List[Dict]:
+    results = []
+    for bsz in batch_sizes:
+        totals, encs, srchs = [], [], []
+
+        if mode in ("end2end", "embedding"):
+            queries = expand_batch(base_queries, bsz)
+
+        # 预热
+        for _ in range(warmup):
+            if mode == "end2end":
+                pipeline.measure_end2end(queries, query_type)
+            elif mode == "embedding":
+                pipeline.measure_embedding_only(queries, query_type)
+            else:  # search
+                qv = make_search_only_queries(pipeline, bsz, search_only_source)
+                pipeline.measure_search_only(qv)
+
+        # 正式重复
+        for _ in range(repeats):
+            if mode == "end2end":
+                total, enc, srch = pipeline.measure_end2end(queries, query_type)
+                totals.append(total); encs.append(enc); srchs.append(srch)
+            elif mode == "embedding":
+                total = pipeline.measure_embedding_only(queries, query_type)
+                totals.append(total)
+            else:  # search
+                qv = make_search_only_queries(pipeline, bsz, search_only_source)
+                total = pipeline.measure_search_only(qv)
+                totals.append(total)
+
+        rec = {
+            "mode": mode,
+            "batch_size": bsz,
+            "avg_total_s": float(np.mean(totals)),
+            "p95_total_s": p95(totals),
+            "avg_per_sample_s": float(np.mean(totals)) / bsz,
+        }
+        if mode == "end2end":
+            rec.update({
+                "avg_encode_s": float(np.mean(encs)),
+                "avg_search_s": float(np.mean(srchs)),
+            })
+            print(f"[end2end bsz={bsz}] total={rec['avg_total_s']:.5f}s "
+                  f"(per-sample={rec['avg_per_sample_s']:.5f}s) | "
+                  f"encode={rec['avg_encode_s']:.5f}s search={rec['avg_search_s']:.5f}s "
+                  f"p95={rec['p95_total_s']:.5f}s")
+        else:
+            print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
+                  f"(per-sample={rec['avg_per_sample_s']:.5f}s) p95={rec['p95_total_s']:.5f}s")
+        results.append(rec)
+
+    return results
+
+
+def save_csv(rows: List[Dict], path: str):
+    import csv
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    keys = sorted({k for r in rows for k in r.keys()})
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        for r in rows:
+            w.writerow(r)
+    print(f"[Save] CSV -> {path}")
+
+
+def plot_curve(rows: List[Dict], title: str, png_path: str):
+    xs = [r["batch_size"] for r in rows]
+    ys = [r["avg_total_s"] for r in rows]
+    plt.figure(figsize=(9, 5))
+    plt.plot(xs, ys, marker="o", label=title)
+    plt.xlabel("Batch Size"); plt.ylabel("Per-Sample Latency (s)")
+    plt.title(title); plt.grid(True); plt.legend(); plt.tight_layout()
+    os.makedirs(os.path.dirname(png_path), exist_ok=True)
+    plt.savefig(png_path, dpi=150)
+    print(f"[Save] PNG -> {png_path}")
+
+
+def parse_args():
+    import argparse
+
+    ap = argparse.ArgumentParser(description="RAG latency benchmark")
+
+    # 数据 & 模型文件路径：现在都有默认值
+    ap.add_argument(
+        "--embedding_file",
+        type=str,
+        default="/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_embeddings.npy",
+        help="Path to precomputed embedding file (.npy)",
+    )
+    ap.add_argument(
+        "--metadata_file",
+        type=str,
+        default="/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_metadata.feather",
+        help="Path to metadata file (.feather)",
+    )
+    ap.add_argument(
+        "--model_path",
+        type=str,
+        default="/mnt/sdc/multi_model_data/weight/ViT-L-14.pt",
+        help="Path to embedding model weights",
+    )
+
+    # 运行配置
+    ap.add_argument(
+        "--search_type",
+        type=str,
+        default="gpu",
+        choices=["cpu", "gpu", "hybrid", "hybrid_ivf"],
+        help="Which FAISS index/search type to benchmark",
+    )
+    ap.add_argument(
+        "--mode",
+        type=str,
+        default="end2end",
+        choices=["end2end", "embedding", "search", "all"],
+        help="Which mode to benchmark",
+    )
+    ap.add_argument(
+        "--query_type",
+        type=str,
+        default="text",
+        choices=["text", "image"],
+        help="Type of query (text/image)",
+    )
+    ap.add_argument(
+        "--base_query",
+        type=str,
+        default="a dog playing on the beach",
+        help="Base query content, will be repeated for batch expansion",
+    )
+    ap.add_argument(
+        "--batch_sizes",
+        type=int,
+        nargs="+",
+        default=[3072, 3584, 3840, 3968, 4096, 4352, 4608, 4864, 5120, 6144, 7168, 8192], #+[i for i in range(600,6000,100)],
+        help="List of batch sizes to benchmark",
+    )
+    ap.add_argument("--repeats", type=int, default=5, help="Number of repeats per batch")
+    ap.add_argument("--warmup", type=int, default=1, help="Warmup runs before measurement")
+    ap.add_argument("--top_k", type=int, default=10, help="Top-K retrieved results")
+    ap.add_argument("--outdir", type=str, default="./outputs", help="Output directory")
+    ap.add_argument(
+        "--search_only_source",
+        type=str,
+        default="encode",
+        choices=["encode", "gaussian", "db_sample"],
+        help="Query vector source when benchmarking search-only",
+    )
+
+    return ap.parse_args()
+
 
 
 def main():
-    ef = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_embeddings.npy"
-    mf = "/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_metadata.feather"
-    em = '/mnt/sdc/multi_model_data/weight/ViT-L-14.pt'
-    query = ["a dog playing on the beach"]
-    pipelineA = PipelineRAG(ef, mf, em, 'gpu')
-    cost_time = []
-    for i in range(1, 17):
-        query_lists = query * i
-        res = pipelineA.batch_rag(query_lists, 'text')
-        cost_time.append(res)
-    #  plt save png
+    args = parse_args()
+    pipe = PipelineRAG(
+        embedding_file_path=args.embedding_file,
+        metadata_file_path=args.metadata_file,
+        embedding_model_path=args.model_path,
+        search_type=args.search_type,
+        top_k=args.top_k,
+    )
+    # args.mode="search"
+    os.makedirs(args.outdir, exist_ok=True)
+    base_queries = [args.base_query]
+
+    collected = []
+
+    run_modes = (
+        ["end2end", "embedding", "search"]
+        if args.mode == "all" else [args.mode]
+    )
+
+    for mode in run_modes:
+        rows = run_benchmark(
+            pipeline=pipe,
+            mode=mode,
+            base_queries=base_queries,
+            query_type=args.query_type,
+            batch_sizes=args.batch_sizes,
+            repeats=args.repeats,
+            warmup=args.warmup,
+            search_only_source=args.search_only_source,
+        )
+        collected.extend(rows)
+
+        # 单独各画一张图
+        png_path = os.path.join(args.outdir, f"{mode}_latency.png")
+        plot_curve(rows, f"{mode.upper()} —  Latency vs Batch Size", png_path)
+
+    # 合并结果 CSV
+    save_csv(collected, os.path.join(args.outdir, "latency_all_modes.csv"))
 
 
 if __name__ == "__main__":
-
     main()
