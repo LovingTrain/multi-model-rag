@@ -11,6 +11,24 @@ import torch  # 仅用于 cuda 同步
 from src.encode_mode import EmbeddingMode
 from src.search_faiss import FaissSearcher
 
+from contextlib import contextmanager
+
+# 兼容无 CUDA/NVTX 的环境
+try:
+    import torch
+    _nvtx_push = torch.cuda.nvtx.range_push
+    _nvtx_pop  = torch.cuda.nvtx.range_pop
+except Exception:
+    def _nvtx_push(name): pass
+    def _nvtx_pop(): pass
+
+@contextmanager
+def nvtx_range(name: str):
+    _nvtx_push(name)
+    try:
+        yield
+    finally:
+        _nvtx_pop()
 
 def now() -> float:
     return time.perf_counter()
@@ -110,10 +128,16 @@ class PipelineRAG:
     def measure_end2end(self, queries, query_type: str) -> Tuple[float, float, float]:
         maybe_cuda_sync()
         t0 = now()
+
+        # with nvtx_range(f"EMBEDDING_bsz={len(queries)}"):
         qv = self._encode(queries, query_type)
+        
+
         maybe_cuda_sync()
         t1 = now()
+        # with nvtx_range(f"SEARCH_bsz={len(queries)}"):
         _ = self._search(qv)
+
         maybe_cuda_sync()
         t2 = now()
         return (t2 - t0, t1 - t0, t2 - t1)  # total, encode, search
@@ -187,7 +211,9 @@ def run_benchmark(
         # 正式重复
         for _ in range(repeats):
             if mode == "end2end":
+                
                 total, enc, srch = pipeline.measure_end2end(queries, query_type)
+
                 totals.append(total); encs.append(enc); srchs.append(srch)
             elif mode == "embedding":
                 total = pipeline.measure_embedding_only(queries, query_type)
@@ -210,12 +236,12 @@ def run_benchmark(
                 "avg_search_s": float(np.mean(srchs)),
             })
             print(f"[end2end bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-                  f"(per-sample={rec['avg_per_sample_s']:.5f}s) | "
+                  f"(per-sample={rec['avg_per_sample_s']:.10f}s) | "
                   f"encode={rec['avg_encode_s']:.5f}s search={rec['avg_search_s']:.5f}s "
                   f"p95={rec['p95_total_s']:.5f}s")
         else:
             print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-                  f"(per-sample={rec['avg_per_sample_s']:.5f}s) p95={rec['p95_total_s']:.5f}s")
+                  f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
         results.append(rec)
 
     return results
@@ -281,7 +307,7 @@ def parse_args():
     ap.add_argument(
         "--mode",
         type=str,
-        default="end2end",
+        default="embedding",
         choices=["end2end", "embedding", "search", "all"],
         help="Which mode to benchmark",
     )
@@ -302,17 +328,17 @@ def parse_args():
         "--batch_sizes",
         type=int,
         nargs="+",
-        default=[3072, 3584, 3840, 3968, 4096, 4352, 4608, 4864, 5120, 6144, 7168, 8192], #+[i for i in range(600,6000,100)],
+        default=[1]+[i for i in range(100,30000,100)], #+[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
         help="List of batch sizes to benchmark",
     )
-    ap.add_argument("--repeats", type=int, default=5, help="Number of repeats per batch")
+    ap.add_argument("--repeats", type=int, default=1, help="Number of repeats per batch")
     ap.add_argument("--warmup", type=int, default=1, help="Warmup runs before measurement")
     ap.add_argument("--top_k", type=int, default=10, help="Top-K retrieved results")
     ap.add_argument("--outdir", type=str, default="./outputs", help="Output directory")
     ap.add_argument(
         "--search_only_source",
         type=str,
-        default="encode",
+        default="db_sample",
         choices=["encode", "gaussian", "db_sample"],
         help="Query vector source when benchmarking search-only",
     )
@@ -330,7 +356,7 @@ def main():
         search_type=args.search_type,
         top_k=args.top_k,
     )
-    # args.mode="search"
+    
     os.makedirs(args.outdir, exist_ok=True)
     base_queries = [args.base_query]
 
@@ -355,7 +381,7 @@ def main():
         collected.extend(rows)
 
         # 单独各画一张图
-        png_path = os.path.join(args.outdir, f"{mode}_latency.png")
+        png_path = os.path.join(args.outdir, f"{args.search_type}_{mode}_latency.png")
         plot_curve(rows, f"{mode.upper()} —  Latency vs Batch Size", png_path)
 
     # 合并结果 CSV
