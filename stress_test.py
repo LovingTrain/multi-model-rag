@@ -10,25 +10,9 @@ import torch  # 仅用于 cuda 同步
 
 from src.encode_mode import EmbeddingMode
 from src.search_faiss import FaissSearcher
+import nvtx
 
-from contextlib import contextmanager
 
-# 兼容无 CUDA/NVTX 的环境
-try:
-    import torch
-    _nvtx_push = torch.cuda.nvtx.range_push
-    _nvtx_pop  = torch.cuda.nvtx.range_pop
-except Exception:
-    def _nvtx_push(name): pass
-    def _nvtx_pop(): pass
-
-@contextmanager
-def nvtx_range(name: str):
-    _nvtx_push(name)
-    try:
-        yield
-    finally:
-        _nvtx_pop()
 
 def now() -> float:
     return time.perf_counter()
@@ -113,15 +97,19 @@ class PipelineRAG:
     # -------- 三种测量原语 --------
     def measure_embedding_only(self, queries, query_type: str) -> float:
         maybe_cuda_sync()
-        t0 = now()
-        _ = self._encode(queries, query_type)
+        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
+            t0 = now()
+            _ = self._encode(queries, query_type)
+        
         maybe_cuda_sync()
         return now() - t0
 
     def measure_search_only(self, query_vectors: np.ndarray) -> float:
         maybe_cuda_sync()
-        t0 = now()
-        _ = self._search(query_vectors)
+        with nvtx.annotate(f"search txt | {len(query_vectors)}", color="green"):
+            t0 = now()
+            _ = self._search(query_vectors)
+        
         maybe_cuda_sync()
         return now() - t0
 
@@ -129,18 +117,15 @@ class PipelineRAG:
         maybe_cuda_sync()
         t0 = now()
 
-        # with nvtx_range(f"EMBEDDING_bsz={len(queries)}"):
-        qv = self._encode(queries, query_type)
+        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
+            qv = self._encode(queries, query_type)
         
+        with nvtx.annotate(f"search txt | {len(qv)}", color="green"):
+            _ = self._search(qv)
 
         maybe_cuda_sync()
         t1 = now()
-        # with nvtx_range(f"SEARCH_bsz={len(queries)}"):
-        _ = self._search(qv)
-
-        maybe_cuda_sync()
-        t2 = now()
-        return (t2 - t0, t1 - t0, t2 - t1)  # total, encode, search
+        return (t1 - t0)  # total, encode, search
 
 
 def expand_batch(base_samples: List, bsz: int) -> List:
@@ -161,8 +146,10 @@ def make_search_only_queries(
     - db_sample: 从库向量中抽样并加极小噪声，避免查询=库项
     """
     if source == "encode":
-        q = expand_batch([text_seed], bsz)
-        return pipeline._encode(q, query_type="text")
+        emb = pipeline._encode([text_seed], query_type="text")
+        # q = expand_batch([text_seed], bsz)
+        # return pipeline._encode(q, query_type="text")
+        return  np.vstack([emb] * bsz)
 
     if source == "gaussian":
         assert pipeline.dim is not None, "未知维度，无法生成高斯查询"
@@ -202,23 +189,27 @@ def run_benchmark(
         for _ in range(warmup):
             if mode == "end2end":
                 pipeline.measure_end2end(queries, query_type)
+                torch.cuda.empty_cache()
             elif mode == "embedding":
                 pipeline.measure_embedding_only(queries, query_type)
+                torch.cuda.empty_cache()
             else:  # search
                 qv = make_search_only_queries(pipeline, bsz, search_only_source)
                 pipeline.measure_search_only(qv)
+                torch.cuda.empty_cache()
 
         # 正式重复
         for _ in range(repeats):
             if mode == "end2end":
-                
-                total, enc, srch = pipeline.measure_end2end(queries, query_type)
-
-                totals.append(total); encs.append(enc); srchs.append(srch)
+                torch.cuda.empty_cache()
+                total= pipeline.measure_end2end(queries, query_type)
+                totals.append(total)
             elif mode == "embedding":
+                torch.cuda.empty_cache()
                 total = pipeline.measure_embedding_only(queries, query_type)
                 totals.append(total)
             else:  # search
+                torch.cuda.empty_cache()
                 qv = make_search_only_queries(pipeline, bsz, search_only_source)
                 total = pipeline.measure_search_only(qv)
                 totals.append(total)
@@ -230,33 +221,16 @@ def run_benchmark(
             "p95_total_s": p95(totals),
             "avg_per_sample_s": float(np.mean(totals)) / bsz,
         }
-        if mode == "end2end":
-            rec.update({
-                "avg_encode_s": float(np.mean(encs)),
-                "avg_search_s": float(np.mean(srchs)),
-            })
-            print(f"[end2end bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-                  f"(per-sample={rec['avg_per_sample_s']:.10f}s) | "
-                  f"encode={rec['avg_encode_s']:.5f}s search={rec['avg_search_s']:.5f}s "
-                  f"p95={rec['p95_total_s']:.5f}s")
-        else:
-            print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-                  f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
+        
+        print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
+                f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
+        
         results.append(rec)
 
     return results
 
 
-def save_csv(rows: List[Dict], path: str):
-    import csv
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    keys = sorted({k for r in rows for k in r.keys()})
-    with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
-        w.writeheader()
-        for r in rows:
-            w.writerow(r)
-    print(f"[Save] CSV -> {path}")
+
 
 
 def plot_curve(rows: List[Dict], title: str, png_path: str):
@@ -280,19 +254,19 @@ def parse_args():
     ap.add_argument(
         "--embedding_file",
         type=str,
-        default="/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_embeddings.npy",
+        default="/mnt/sdc/wjj/data/index-data/all_embeddings.npy",
         help="Path to precomputed embedding file (.npy)",
     )
     ap.add_argument(
         "--metadata_file",
         type=str,
-        default="/mnt/sdc/multi_model_data/data/index-data/coco_train_2017_14L/all_metadata.feather",
+        default="/mnt/sdc/wjj/data/index-data/all_metadata.feather",
         help="Path to metadata file (.feather)",
     )
     ap.add_argument(
         "--model_path",
         type=str,
-        default="/mnt/sdc/multi_model_data/weight/ViT-L-14.pt",
+        default="/mnt/sdc/wjj/ViT-L-14.pt",
         help="Path to embedding model weights",
     )
 
@@ -307,7 +281,7 @@ def parse_args():
     ap.add_argument(
         "--mode",
         type=str,
-        default="embedding",
+        default="end2end",
         choices=["end2end", "embedding", "search", "all"],
         help="Which mode to benchmark",
     )
@@ -328,17 +302,17 @@ def parse_args():
         "--batch_sizes",
         type=int,
         nargs="+",
-        default=[1]+[i for i in range(100,30000,100)], #+[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
+        default=[i for i in range(100,30000,200)], #+[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
         help="List of batch sizes to benchmark",
     )
-    ap.add_argument("--repeats", type=int, default=1, help="Number of repeats per batch")
-    ap.add_argument("--warmup", type=int, default=1, help="Warmup runs before measurement")
+    ap.add_argument("--repeats", type=int, default=2, help="Number of repeats per batch")
+    ap.add_argument("--warmup", type=int, default=2, help="Warmup runs before measurement")
     ap.add_argument("--top_k", type=int, default=10, help="Top-K retrieved results")
     ap.add_argument("--outdir", type=str, default="./outputs", help="Output directory")
     ap.add_argument(
         "--search_only_source",
         type=str,
-        default="db_sample",
+        default="encode",
         choices=["encode", "gaussian", "db_sample"],
         help="Query vector source when benchmarking search-only",
     )
@@ -384,8 +358,6 @@ def main():
         png_path = os.path.join(args.outdir, f"{args.search_type}_{mode}_latency.png")
         plot_curve(rows, f"{mode.upper()} —  Latency vs Batch Size", png_path)
 
-    # 合并结果 CSV
-    save_csv(collected, os.path.join(args.outdir, "latency_all_modes.csv"))
 
 
 if __name__ == "__main__":
