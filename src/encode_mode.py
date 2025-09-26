@@ -14,20 +14,20 @@ from transformers import CLIPModel, CLIPProcessor
 class EmbeddingMode():
     def __init__(self,model_path):
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        # embedding_model, preprocess = clip.load(
-        #     "/mnt/sdc/multi_model_data/weight/ViT-L-14.pt", device=device, jit=False)
+        embedding_model, preprocess = clip.load(
+            model_path, device=device, jit=False)
         # flash attention
 
 
-        local_model_path = "/home/wangjingjing/clip-vit-large-patch14" # 使用你刚刚保存的路径
+        # local_model_path = "/home/wangjingjing/clip-vit-large-patch14" # 使用你刚刚保存的路径
 
-        embedding_model = CLIPModel.from_pretrained(
-            local_model_path,
-            torch_dtype=torch.float16,
-            attn_implementation="flash_attention_2"
-        ).to(device)
+        # embedding_model = CLIPModel.from_pretrained(
+        #     local_model_path,
+        #     torch_dtype=torch.float16,
+        #     attn_implementation="flash_attention_2"
+        # ).to(device)
 
-        preprocess = CLIPProcessor.from_pretrained(local_model_path)
+        # preprocess = CLIPProcessor.from_pretrained(local_model_path)
         self.model = embedding_model.eval()
         self.preprocess = preprocess
         self.device = device
@@ -50,7 +50,7 @@ class EmbeddingMode():
         norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-12
         mat /= norms
 
-    def encoding_query_text(
+    def encoding_query_text_flash_atten(
         self,
         query_texts: Union[str, Sequence[str]],
     ) -> np.ndarray:
@@ -78,7 +78,7 @@ class EmbeddingMode():
             vecs = emb.detach().cpu().float().numpy().astype(np.float32, copy=False)
 
         return vecs
-    def encoding_query_text_clip(
+    def encoding_query_text(
         self,
         query_texts: Union[str, Sequence[str]],
     ) -> np.ndarray:
@@ -99,39 +99,35 @@ class EmbeddingMode():
             vecs=emb.detach().cpu().float().numpy().astype(np.float32, copy=False) 
 
         return vecs
-
-    # ------- 单图或批量图片编码 -------
-    def encoding_query_image(
-        self,
-        images: Union[str, Image.Image, Sequence[Union[str, Image.Image]]],
-        chunk_size: int = 64,
-    ) -> np.ndarray:
-        """
-        入参:
-          - 单张: 路径或 PIL.Image
-          - 批量: list/tuple[路径或 PIL.Image]
-        出参:
-          - np.ndarray, shape=[B, D], dtype=float32，L2 归一化
-        """
+    
+    def process_batch_images(self,images: Union[str, Image.Image, Sequence[Union[str, Image.Image]]]):
+        
         def _load_one(x: Union[str, Image.Image]) -> Image.Image:
             return x if isinstance(x, Image.Image) else Image.open(x)
-
+        
         if isinstance(images, (str, Image.Image)):
             ims = [images]
         elif isinstance(images, Sequence):
             ims = list(images)
         else:
-            raise TypeError(f"images 类型不支持: {type(images)}")
+            raise TypeError(f"images 类型不支持: {type(images)}")        
+        
+        tensors = [self.preprocess(_load_one(p)) for p in ims]
+        batch = torch.stack(tensors, dim=0).to(self.device)           
+        
+        return batch
+        
+    # ------- 单图或批量图片编码 -------
+    def encoding_query_image(
+        self,
+        img_tensor: torch.tensor    # [bs, 3,h,w]
+    ) -> np.ndarray:
 
         feats = []
-        with torch.no_grad():
-            for start in range(0, len(ims), chunk_size):
-                sub = ims[start:start + chunk_size]
-                tensors = [self.preprocess(_load_one(p)) for p in sub]
-                batch = torch.stack(tensors, dim=0).to(self.device)             # [bs, 3, H, W]
-                emb: torch.Tensor = self.model.encode_image(batch)              # [bs, D]
-                emb = emb / emb.norm(dim=1, keepdim=True)
-                feats.append(emb.detach().cpu().float().numpy())
+        with torch.no_grad():       
+            emb: torch.Tensor = self.model.encode_image(img_tensor)            
+            emb = emb / emb.norm(dim=1, keepdim=True)
+            feats.append(emb.detach().cpu().float().numpy())
 
         vecs = np.concatenate(feats, axis=0).astype(np.float32, copy=False)
         return vecs
