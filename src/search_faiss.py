@@ -11,7 +11,7 @@ from tqdm import tqdm  # 用于显示漂亮的进度条
 
 
 class FaissSearcher():
-    def __init__(self, embedding_path, metadata_path) -> None:
+    def __init__(self, embedding_path, metadata_path,nprobe=300) -> None:
 
         all_embeddings = np.load(embedding_path)
         self.metadata_df = pd.read_feather(metadata_path)
@@ -19,7 +19,7 @@ class FaissSearcher():
         self.all_embeddings = all_embeddings
         N = all_embeddings.shape[0]
         self.split_idx = int(0.7 * N)
-        self.nprobe =128
+        self.nprobe = nprobe
     # IVF 索引,有聚类
 
     def init_cpu_index(self):
@@ -128,19 +128,19 @@ class FaissSearcher():
     def cpu_search(self, cpu_search_index, query_vector, k=5):
 
         distances, indices = cpu_search_index.search(query_vector, k)
-        self.print_search_results(distances, indices)
+        # self.print_search_results(distances, indices)
         return distances, indices
 
     def gpu_search(self, gpu_search_index, query_vector, k=5):
 
         distances, indices = gpu_search_index.search(query_vector, k)
-        self.print_search_results(distances, indices)
+        # self.print_search_results(distances, indices)
         return distances, indices
 
     def hybrid_search(self, shard_index, query_vector, k=5):
 
         distances, indices = shard_index.search(query_vector, k)
-        self.print_search_results(distances, indices)
+        # self.print_search_results(distances, indices)
         return distances, indices
 
     def print_search_results(self, distances, indices, k=5):
