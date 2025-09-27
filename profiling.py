@@ -54,11 +54,12 @@ class PipelineRAG:
         else:
             raise ValueError(f"不支持的 query_type: {query_type}")
 
-        if hasattr(vecs, "detach"):
-            vecs = vecs.detach().cpu().numpy()
-        elif isinstance(vecs, list):
-            vecs = np.asarray(vecs, dtype=np.float32)
-        return vecs.astype(np.float32)
+        # if hasattr(vecs, "detach"):
+        #     vecs = vecs.detach().cpu().numpy()
+        # elif isinstance(vecs, list):
+        #     vecs = np.asarray(vecs, dtype=np.float32)
+        # return vecs.astype(np.float32)
+        return vecs
 
     def _search(self, q: np.ndarray):
         if self.search_type == "cpu":
@@ -222,6 +223,7 @@ def main():
         else:
             qv = make_search_only_queries(
                 pipeline, bsz, args.search_only_source)
+
         torch.cuda.empty_cache()
         with profile(
             activities=activities,
@@ -234,7 +236,7 @@ def main():
         ) as prof:
 
             for step in range(total_profiling_steps):
-                maybe_cuda_sync()
+
                 if mode == "end2end":
                     total = pipeline.measure_end2end(queries, args.query_type)
                 elif mode == "embedding":

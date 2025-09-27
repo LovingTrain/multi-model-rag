@@ -13,7 +13,6 @@ from src.search_faiss import FaissSearcher
 import nvtx
 
 
-
 def now() -> float:
     return time.perf_counter()
 
@@ -99,8 +98,8 @@ class PipelineRAG:
         maybe_cuda_sync()
         with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
             t0 = now()
-            _ = self._encode(queries, query_type)
-        
+            embed = self.embedding_model.encoding_query_text(queries)
+
         maybe_cuda_sync()
         return now() - t0
 
@@ -109,7 +108,7 @@ class PipelineRAG:
         with nvtx.annotate(f"search txt | {len(query_vectors)}", color="green"):
             t0 = now()
             _ = self._search(query_vectors)
-        
+
         maybe_cuda_sync()
         return now() - t0
 
@@ -119,7 +118,7 @@ class PipelineRAG:
 
         with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
             qv = self._encode(queries, query_type)
-        
+
         with nvtx.annotate(f"search txt | {len(qv)}", color="green"):
             _ = self._search(qv)
 
@@ -149,7 +148,7 @@ def make_search_only_queries(
         emb = pipeline._encode([text_seed], query_type="text")
         # q = expand_batch([text_seed], bsz)
         # return pipeline._encode(q, query_type="text")
-        return  np.vstack([emb] * bsz)
+        return np.vstack([emb] * bsz)
 
     if source == "gaussian":
         assert pipeline.dim is not None, "未知维度，无法生成高斯查询"
@@ -194,7 +193,8 @@ def run_benchmark(
                 pipeline.measure_embedding_only(queries, query_type)
                 torch.cuda.empty_cache()
             else:  # search
-                qv = make_search_only_queries(pipeline, bsz, search_only_source)
+                qv = make_search_only_queries(
+                    pipeline, bsz, search_only_source)
                 pipeline.measure_search_only(qv)
                 torch.cuda.empty_cache()
 
@@ -202,7 +202,7 @@ def run_benchmark(
         for _ in range(repeats):
             if mode == "end2end":
                 torch.cuda.empty_cache()
-                total= pipeline.measure_end2end(queries, query_type)
+                total = pipeline.measure_end2end(queries, query_type)
                 totals.append(total)
             elif mode == "embedding":
                 torch.cuda.empty_cache()
@@ -210,7 +210,8 @@ def run_benchmark(
                 totals.append(total)
             else:  # search
                 torch.cuda.empty_cache()
-                qv = make_search_only_queries(pipeline, bsz, search_only_source)
+                qv = make_search_only_queries(
+                    pipeline, bsz, search_only_source)
                 total = pipeline.measure_search_only(qv)
                 totals.append(total)
 
@@ -221,16 +222,13 @@ def run_benchmark(
             "p95_total_s": p95(totals),
             "avg_per_sample_s": float(np.mean(totals)) / bsz,
         }
-        
+
         print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-                f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
-        
+              f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
+
         results.append(rec)
 
     return results
-
-
-
 
 
 def plot_curve(rows: List[Dict], title: str, png_path: str):
@@ -238,8 +236,12 @@ def plot_curve(rows: List[Dict], title: str, png_path: str):
     ys = [r["avg_total_s"] for r in rows]
     plt.figure(figsize=(9, 5))
     plt.plot(xs, ys, marker="o", label=title)
-    plt.xlabel("Batch Size"); plt.ylabel("Per-Sample Latency (s)")
-    plt.title(title); plt.grid(True); plt.legend(); plt.tight_layout()
+    plt.xlabel("Batch Size")
+    plt.ylabel("Per-Sample Latency (s)")
+    plt.title(title)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
     os.makedirs(os.path.dirname(png_path), exist_ok=True)
     plt.savefig(png_path, dpi=150)
     print(f"[Save] PNG -> {png_path}")
@@ -302,13 +304,18 @@ def parse_args():
         "--batch_sizes",
         type=int,
         nargs="+",
-        default=[i for i in range(100,30000,200)], #+[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
+        # +[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
+        default=[i for i in range(100, 30000, 200)],
         help="List of batch sizes to benchmark",
     )
-    ap.add_argument("--repeats", type=int, default=2, help="Number of repeats per batch")
-    ap.add_argument("--warmup", type=int, default=2, help="Warmup runs before measurement")
-    ap.add_argument("--top_k", type=int, default=10, help="Top-K retrieved results")
-    ap.add_argument("--outdir", type=str, default="./outputs", help="Output directory")
+    ap.add_argument("--repeats", type=int, default=2,
+                    help="Number of repeats per batch")
+    ap.add_argument("--warmup", type=int, default=2,
+                    help="Warmup runs before measurement")
+    ap.add_argument("--top_k", type=int, default=10,
+                    help="Top-K retrieved results")
+    ap.add_argument("--outdir", type=str, default="./outputs",
+                    help="Output directory")
     ap.add_argument(
         "--search_only_source",
         type=str,
@@ -320,7 +327,6 @@ def parse_args():
     return ap.parse_args()
 
 
-
 def main():
     args = parse_args()
     pipe = PipelineRAG(
@@ -330,7 +336,7 @@ def main():
         search_type=args.search_type,
         top_k=args.top_k,
     )
-    
+
     os.makedirs(args.outdir, exist_ok=True)
     base_queries = [args.base_query]
 
@@ -355,9 +361,9 @@ def main():
         collected.extend(rows)
 
         # 单独各画一张图
-        png_path = os.path.join(args.outdir, f"{args.search_type}_{mode}_latency.png")
+        png_path = os.path.join(
+            args.outdir, f"{args.search_type}_{mode}_latency.png")
         plot_curve(rows, f"{mode.upper()} —  Latency vs Batch Size", png_path)
-
 
 
 if __name__ == "__main__":

@@ -82,4 +82,14 @@ You can customize the pipeline by modifying the following parameters in `config.
 
 📊 📄 🤝
 
+Nsight System Profiler CIL :
+   ```bash
+   nsys profile  -o my_report \
+    -t cuda,nvtx \
+    --gpu-metrics-device 1 \
+    --force-overwrite true \
+    python stress_test.py
+
+   ```
+
 
