@@ -1,4 +1,5 @@
 # rag_bench.py
+from torch.profiler import profile, ProfilerActivity, schedule, tensorboard_trace_handler
 import os
 import time
 import argparse
@@ -13,7 +14,6 @@ from src.search_faiss import FaissSearcher
 import nvtx
 
 
-
 def now() -> float:
     return time.perf_counter()
 
@@ -21,8 +21,6 @@ def now() -> float:
 def maybe_cuda_sync():
     if torch.cuda.is_available():
         torch.cuda.synchronize()
-
-
 
 
 class PipelineRAG:
@@ -43,29 +41,14 @@ class PipelineRAG:
         self.search_type = search_type
         self.top_k = top_k
 
-        if search_type == "cpu":
-            self.index = self.searcher.init_cpu_index()
-        elif search_type == "gpu":
-            self.index = self.searcher.init_gpu_index()
-        elif search_type == "hybrid":
-            self.index = self.searcher.init_hybrid_index()
-        elif search_type == "hybrid_ivf":
-            self.index = self.searcher.init_hybrid_index_ivf()
-        else:
-            raise ValueError(f"不支持的 search_type: {search_type}")
-
-        # 尝试拿到库向量的维度，为 search-only 生成假查询时用
-        try:
-            self.dim = int(self.searcher.all_embeddings.shape[1])
-        except Exception:
-            self.dim = None
+        self.index = self.searcher.init_gpu_index()
 
         print(f"[Init] search_type={search_type} 初始化完成。")
 
     # ====== 统一适配区：根据你的真实 API 改这两处 ======
     def _encode(self, queries, query_type: str) -> np.ndarray:
         if query_type == "text":
-            vecs = self.embedding_model.encoding_query_text(queries)
+            vecs = self.embedding_model.encoding_query_text_all(queries)
         elif query_type == "image":
             vecs = self.embedding_model.encoding_query_image(queries)
         else:
@@ -92,12 +75,8 @@ class PipelineRAG:
 
     # -------- 三种测量原语 --------
     def measure_embedding_only(self, queries, query_type: str) -> float:
-        maybe_cuda_sync()
-        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
-            t0 = now()
-            _ = self._encode(queries, query_type)
-        
-        maybe_cuda_sync()
+        t0 = now()
+        embed = self.embedding_model.encoding_query_text(queries)
         return now() - t0
 
     def measure_search_only(self, query_vectors: np.ndarray) -> float:
@@ -105,21 +84,14 @@ class PipelineRAG:
         with nvtx.annotate(f"search txt | {len(query_vectors)}", color="green"):
             t0 = now()
             _ = self._search(query_vectors)
-        
+
         maybe_cuda_sync()
         return now() - t0
 
     def measure_end2end(self, queries, query_type: str) -> Tuple[float, float, float]:
-        maybe_cuda_sync()
         t0 = now()
-
-        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
-            qv = self._encode(queries, query_type)
-        
-        with nvtx.annotate(f"search txt | {len(qv)}", color="green"):
-            _ = self._search(qv)
-
-        maybe_cuda_sync()
+        qv = self._encode(queries, query_type)
+        _ = self._search(qv)
         t1 = now()
         return (t1 - t0)  # total, encode, search
 
@@ -138,39 +110,7 @@ def make_search_only_queries(
 
     emb = pipeline._encode([text_seed], query_type="text")
 
-    return  np.vstack([emb] * bsz)
-
-def run_benchmark(
-    pipeline: PipelineRAG,
-    mode: str,                         # 'end2end' | 'embedding' | 'search'
-    base_queries: List[str],
-    query_type: str,
-    batch_sizes: List[int],
-    repeats: int,
-    warmup: int,
-    search_only_source: str = "encode"
-) -> List[Dict]:
-    results = []
-    for bsz in batch_sizes:
-        totals = []
-
-        if mode in ("end2end", "embedding"):
-            queries = expand_batch(base_queries, bsz)
-        # 正式重复
-        for _ in range(repeats):
-            if mode == "end2end":
-                torch.cuda.empty_cache()
-                total= pipeline.measure_end2end(queries, query_type)
-                totals.append(total)
-            elif mode == "embedding":
-                torch.cuda.empty_cache()
-                total = pipeline.measure_embedding_only(queries, query_type)
-                totals.append(total)
-            else:  # search
-                torch.cuda.empty_cache()
-                qv = make_search_only_queries(pipeline, bsz, search_only_source)
-                total = pipeline.measure_search_only(qv)
-                totals.append(total)
+    return np.vstack([emb] * bsz)
 
 
 def parse_args():
@@ -230,13 +170,17 @@ def parse_args():
         "--batch_sizes",
         type=int,
         nargs="+",
-        default=[i for i in range(1000,9000,1000)], #+[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
+        default=[i for i in range(1000, 9000, 1000)],
         help="List of batch sizes to benchmark",
     )
-    ap.add_argument("--repeats", type=int, default=1, help="Number of repeats per batch")
-    ap.add_argument("--warmup", type=int, default=0, help="Warmup runs before measurement")
-    ap.add_argument("--top_k", type=int, default=10, help="Top-K retrieved results")
-    ap.add_argument("--outdir", type=str, default="./outputs", help="Output directory")
+    ap.add_argument("--repeats", type=int, default=1,
+                    help="Number of repeats per batch")
+    ap.add_argument("--warmup", type=int, default=0,
+                    help="Warmup runs before measurement")
+    ap.add_argument("--top_k", type=int, default=10,
+                    help="Top-K retrieved results")
+    ap.add_argument("--outdir", type=str, default="./outputs",
+                    help="Output directory")
     ap.add_argument(
         "--search_only_source",
         type=str,
@@ -246,8 +190,6 @@ def parse_args():
     )
 
     return ap.parse_args()
-
-from torch.profiler import profile, ProfilerActivity, schedule, tensorboard_trace_handler
 
 
 def main():
@@ -259,27 +201,28 @@ def main():
         search_type=args.search_type,
         top_k=args.top_k,
     )
-    
+
     os.makedirs(args.outdir, exist_ok=True)
     base_queries = [args.base_query]
-
 
     prof_schedule = schedule(wait=1, warmup=1, active=2, repeat=1)
     total_profiling_steps = (1 + 1 + 2) * 1
 
-    activities = [ProfilerActivity.CPU,ProfilerActivity.CUDA]
-    mode= args.mode
+    activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+    mode = args.mode
 
     for bsz in args.batch_sizes:
-        
+
         print(f"\n[INFO] Starting profiling for batch_size = {bsz}")
-        prof_output_dir = os.path.join("/mnt/sdc/wjj/prof" , f"bsz_{bsz}")
+        prof_output_dir = os.path.join("/mnt/sdc/wjj/prof", f"bsz_{bsz}")
         os.makedirs(prof_output_dir, exist_ok=True)
 
         if mode in ("end2end", "embedding"):
             queries = expand_batch(base_queries, bsz)
         else:
-            qv = make_search_only_queries(pipeline, bsz, args.search_only_source)
+            qv = make_search_only_queries(
+                pipeline, bsz, args.search_only_source)
+        torch.cuda.empty_cache()
         with profile(
             activities=activities,
             schedule=prof_schedule,
@@ -288,24 +231,22 @@ def main():
             profile_memory=True,
             with_stack=True,
             with_modules=True,
-        ) as prof: 
-            for step in range(total_profiling_steps):           
-                if mode == "end2end":
-                    torch.cuda.empty_cache()
-                    total= pipeline.measure_end2end(queries, args.query_type)
+        ) as prof:
 
+            for step in range(total_profiling_steps):
+                maybe_cuda_sync()
+                if mode == "end2end":
+                    total = pipeline.measure_end2end(queries, args.query_type)
                 elif mode == "embedding":
-                    torch.cuda.empty_cache()
-                    total = pipeline.measure_embedding_only(queries, args.query_type)
+                    total = pipeline.measure_embedding_only(
+                        queries, args.query_type)
                 else:  # search
-                    torch.cuda.empty_cache()
-                    
                     total = pipeline.measure_search_only(qv)
                 prof.step()
-                print(f"  - Step {step + 1}/{total_profiling_steps} completed for bsz={bsz}.")
-        
-    print("\n[INFO] All profiling runs completed.")
+                print(
+                    f"  - Step {step + 1}/{total_profiling_steps} completed for bsz={bsz}.")
 
+    print("\n[INFO] All profiling runs completed.")
 
 
 if __name__ == "__main__":
