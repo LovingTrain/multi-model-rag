@@ -11,7 +11,7 @@ from tqdm import tqdm  # 用于显示漂亮的进度条
 
 
 class FaissSearcher():
-    def __init__(self, embedding_path, metadata_path,nprobe=300) -> None:
+    def __init__(self, embedding_path, metadata_path,nprobe=128) -> None:
 
         all_embeddings = np.load(embedding_path)
         self.metadata_df = pd.read_feather(metadata_path)
