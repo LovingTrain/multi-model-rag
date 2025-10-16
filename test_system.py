@@ -1,88 +1,45 @@
-# rag_bench.py
+# 文件名: stress_test_nsys.py
 import os
 import time
 import argparse
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 import numpy as np
 import matplotlib.pyplot as plt
-
-import torch  # 仅用于 cuda 同步
-
-from src.encode_mode import EmbeddingMode
-from src.search_faiss import FaissSearcher
+import torch
 import nvtx
 
 
-def now() -> float:
-    return time.perf_counter()
 
 
-def maybe_cuda_sync():
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
+from src.encode_mode import EmbeddingMode
+from src.search_faiss import FaissSearcher
 
+# -------------------------------------------------------------------
+# 1. 核心组件定义 (保持不变)
+# -------------------------------------------------------------------
 
-def p95(arr: List[float]) -> float:
-    if not arr:
-        return float("nan")
-    return float(np.percentile(np.asarray(arr, dtype=float), 95))
-def calculate_percentiles(arr: List[float], percentiles: List[int] = [90, 95, 99]) -> Dict[str, float]:
+class EmbeddingComponent:
     """
-    计算给定数组的多个百分位点。
-    返回一个字典，键为 'pXX'，值为对应的百分位数值。
+    只负责 Embedding 模型的加载和推理。
     """
-    if not arr:
-        return {f"p{p}": float("nan") for p in percentiles}
+    def __init__(self, model_path: str):
+        print(f"[组件] 正在初始化 EmbeddingComponent...")
+        self.model = EmbeddingMode(model_path=model_path)
+        print(f"[组件] EmbeddingComponent 初始化完成。")
 
-    data = np.asarray(arr, dtype=float)
-    percentile_values = np.percentile(data, percentiles)
-
-    return {f"p{p}": val for p, val in zip(percentiles, percentile_values)}
-
-
-class PipelineRAG:
-    def __init__(
-        self,
-        embedding_file_path: str,
-        metadata_file_path: str,
-        embedding_model_path: str,
-        search_type: str = "gpu",
-        top_k: int = 10,
-    ):
-        self.embedding_model = EmbeddingMode(model_path=embedding_model_path)
-
-        self.searcher = FaissSearcher(
-            embedding_path=embedding_file_path,
-            metadata_path=metadata_file_path,
-        )
-        self.search_type = search_type
-        self.top_k = top_k
-
-        if search_type == "cpu":
-            self.index = self.searcher.init_cpu_index()
-        elif search_type == "gpu":
-            self.index = self.searcher.init_gpu_index()
-        elif search_type == "hybrid":
-            self.index = self.searcher.init_hybrid_index()
-        elif search_type == "hybrid_ivf":
-            self.index = self.searcher.init_hybrid_index_ivf()
-        else:
-            raise ValueError(f"不支持的 search_type: {search_type}")
-
-        # 尝试拿到库向量的维度，为 search-only 生成假查询时用
-        try:
-            self.dim = int(self.searcher.all_embeddings.shape[1])
-        except Exception:
-            self.dim = None
-
-        print(f"[Init] search_type={search_type} 初始化完成。")
-
-    # ====== 统一适配区：根据你的真实 API 改这两处 ======
-    def _encode(self, queries, query_type: str) -> np.ndarray:
+    def encode(self, queries: list, query_type: str) -> np.ndarray:
+        """
+        执行编码操作。
+        对于图片，queries 列表包含的是图片文件路径。
+        """
         if query_type == "text":
-            vecs = self.embedding_model.encoding_query_text(queries)
+            vecs = self.model.encoding_query_text(queries)
         elif query_type == "image":
-            vecs = self.embedding_model.encoding_query_image(queries)
+            for path in queries:
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"图片文件未找到: {path}")
+            image_batch = self.model.process_batch_images(queries)
+            vecs = self.model.encoding_query_image(image_batch)
         else:
             raise ValueError(f"不支持的 query_type: {query_type}")
 
@@ -92,306 +49,284 @@ class PipelineRAG:
             vecs = np.asarray(vecs, dtype=np.float32)
         return vecs.astype(np.float32)
 
-    def _search(self, q: np.ndarray):
-        if self.search_type == "cpu":
-            return self.searcher.cpu_search(self.index, q)
-        elif self.search_type == "gpu":
-            return self.searcher.gpu_search(self.index, q)
-        elif self.search_type == "hybrid":
-            return self.searcher.hybrid_search(self.index, q)
-        elif self.search_type == "hybrid_ivf":
-            return self.searcher.hybrid_ivf_search(self.index, q)
-        else:
-            raise ValueError(f"不支持的 search_type: {self.search_type}")
-    # =====================================================
+class SearchComponent:
+    """
+    只负责 Faiss GPU 索引的加载和搜索。
+    """
+    def __init__(self, embedding_path: str, metadata_path: str):
+        print(f"[组件] 正在初始化 SearchComponent (仅限 GPU)...")
+        self.searcher = FaissSearcher(
+            embedding_path=embedding_path,
+            metadata_path=metadata_path,
+        )
+        self.index = self.searcher.init_gpu_index()
+        self.dim = int(self.searcher.all_embeddings.shape[1])
+        print(f"[组件] SearchComponent (GPU) 初始化完成。")
 
-    # -------- 三种测量原语 --------
-    def measure_embedding_only(self, queries, query_type: str) -> float:
-        maybe_cuda_sync()
-        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
-            t0 = now()
-            embed = self.embedding_model.encoding_query_text(queries)
-
-        maybe_cuda_sync()
-        return now() - t0
-
-    def measure_search_only(self, query_vectors: np.ndarray) -> float:
-        maybe_cuda_sync()
-        with nvtx.annotate(f"search txt | {len(query_vectors)}", color="green"):
-            t0 = now()
-            _ = self._search(query_vectors)
-
-        maybe_cuda_sync()
-        return now() - t0
-
-    def measure_end2end(self, queries, query_type: str) -> Tuple[float, float, float]:
-        maybe_cuda_sync()
-        t0 = now()
-
-        with nvtx.annotate(f"embedding txt | {len(queries)}", color="red"):
-            qv = self._encode(queries, query_type)
-
-        with nvtx.annotate(f"search txt | {len(qv)}", color="green"):
-            _ = self._search(qv)
-
-        maybe_cuda_sync()
-        t1 = now()
-        return (t1 - t0)  # total, encode, search
+    def search(self, query_vectors: np.ndarray):
+        """执行 GPU 搜索"""
+        return self.searcher.gpu_search(self.index, query_vectors)
 
 
+# -------------------------------------------------------------------
+# 2. 基准测试工具函数 (已修改以支持 Nsys)
+# -------------------------------------------------------------------
+
+def now() -> float:
+    return time.perf_counter()
+
+def maybe_cuda_sync():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+def calculate_percentiles(arr: List[float], percentiles: List[int] = [90, 95, 99]) -> Dict[str, float]:
+    if not arr: return {f"p{p}": float("nan") for p in percentiles}
+    data = np.asarray(arr, dtype=float)
+    percentile_values = np.percentile(data, percentiles)
+    return {f"p{p}": val for p, val in zip(percentiles, percentile_values)}
+
+# -------- 测量原语 (=== 主要改动点 1: 增加 use_nvtx 参数 ===) --------
+def measure_embedding_only(component: EmbeddingComponent, queries: list, query_type: str, use_nvtx: bool) -> float:
+    maybe_cuda_sync()
+    t0 = now()
+    if use_nvtx:
+        with nvtx.annotate(f"embedding_{query_type}_bsz{len(queries)}", color="red"):
+            _ = component.encode(queries, query_type)
+    else:
+        _ = component.encode(queries, query_type)
+    maybe_cuda_sync()
+    return now() - t0
+
+def measure_search_only(component: SearchComponent, query_vectors: np.ndarray, use_nvtx: bool) -> float:
+    maybe_cuda_sync()
+    t0 = now()
+    if use_nvtx:
+        with nvtx.annotate(f"search_bsz{len(query_vectors)}", color="green"):
+            _ = component.search(query_vectors)
+    else:
+        _ = component.search(query_vectors)
+    maybe_cuda_sync()
+    return now() - t0
+
+def measure_end2end(embedding_comp: EmbeddingComponent, search_comp: SearchComponent, queries: list, query_type: str, use_nvtx: bool) -> float:
+    maybe_cuda_sync()
+    t0 = now()
+    # 在端到端测试中，为两个阶段分别打上 NVTX 标记
+    if use_nvtx:
+        with nvtx.annotate(f"e2e_embedding_{query_type}_bsz{len(queries)}", color="red"):
+            query_vectors = embedding_comp.encode(queries, query_type)
+        with nvtx.annotate(f"e2e_search_bsz{len(query_vectors)}", color="green"):
+            _ = search_comp.search(query_vectors)
+    else:
+        query_vectors = embedding_comp.encode(queries, query_type)
+        _ = search_comp.search(query_vectors)
+    maybe_cuda_sync()
+    return now() - t0
+
+# -------- 辅助函数 (保持不变) --------
 def expand_batch(base_samples: List, bsz: int) -> List:
-    # 简单扩增样本；如需真实不同样本，替换此函数即可
     return base_samples * bsz
 
-
 def make_search_only_queries(
-    pipeline: PipelineRAG,
+    dim: int,
     bsz: int,
-    source: str = "encode",  # 'encode' | 'gaussian' | 'db_sample'
-    text_seed: str = "a dog playing on the beach"
+    source: str = "gaussian",
+    embedding_comp: EmbeddingComponent = None,
+    text_seed: str = "a dog",
+    image_seed_path: str = None
 ) -> np.ndarray:
-    """
-    生成供 search-only 使用的查询向量：
-    - encode   : 先编码再用，同维度分布最贴近真实请求（推荐）
-    - gaussian : N(0,1) 采样后做 L2 归一化（需要 dim）
-    - db_sample: 从库向量中抽样并加极小噪声，避免查询=库项
-    """
     if source == "encode":
-        emb = pipeline._encode([text_seed], query_type="text")
-        # q = expand_batch([text_seed], bsz)
-        # return pipeline._encode(q, query_type="text")
+        if embedding_comp is None: raise ValueError("当 source='encode' 时，必须提供 EmbeddingComponent")
+        
+        if image_seed_path:
+            emb = embedding_comp.encode([image_seed_path], query_type="image")
+        else:
+            emb = embedding_comp.encode([text_seed], query_type="text")
         return np.vstack([emb] * bsz)
 
     if source == "gaussian":
-        assert pipeline.dim is not None, "未知维度，无法生成高斯查询"
-        q = np.random.randn(bsz, pipeline.dim).astype(np.float32)
-        # 归一化（若索引用内积/余弦，这样更稳定）
+        q = np.random.randn(bsz, dim).astype(np.float32)
         norm = np.linalg.norm(q, axis=1, keepdims=True) + 1e-9
         return (q / norm).astype(np.float32)
+    raise ValueError(f"未知的 source: {source}")
 
-    if source == "db_sample":
-        emb = pipeline.searcher.all_embeddings
-        idx = np.random.choice(emb.shape[0], size=bsz, replace=False)
-        q = emb[idx].astype(np.float32).copy()
-        q += np.random.normal(0, 1e-3, size=q.shape).astype(np.float32)
-        return q
-
-    raise ValueError(f"未知 source: {source}")
-
-
+# -------- 基准测试主函数 (=== 主要改动点 2 & 3 ===) --------
 def run_benchmark(
-    pipeline: PipelineRAG,
-    mode: str,                         # 'end2end' | 'embedding' | 'search'
+    target_component: Union[EmbeddingComponent, SearchComponent, Tuple[EmbeddingComponent, SearchComponent]],
+    mode: str,
     base_queries: List[str],
     query_type: str,
     batch_sizes: List[int],
     repeats: int,
     warmup: int,
-    search_only_source: str = "encode"
+    search_only_source: str = "encode",
+    image_seed_path: str = None
 ) -> List[Dict]:
     results = []
+    
+    dim = 768
+    if mode == 'search': dim = target_component.dim
+    elif mode == 'end2end': dim = target_component[1].dim
+
     for bsz in batch_sizes:
-        totals, encs, srchs = [], [], []
-
-        if mode in ("end2end", "embedding"):
-            queries = expand_batch(base_queries, bsz)
-
-        # 预热
-        for _ in range(warmup):
-            if mode == "end2end":
-                pipeline.measure_end2end(queries, query_type)
-            elif mode == "embedding":
-                pipeline.measure_embedding_only(queries, query_type)
-            else:  # search
-                qv = make_search_only_queries(
-                    pipeline, bsz, search_only_source)
-                pipeline.measure_search_only(qv)
+        # === 主要改动点 2: 为每个 batch size 添加顶层 NVTX 标记 ===
+        with nvtx.annotate(f"Batch Size: {bsz}", color="purple"):
+            if bsz == 0: continue
+            totals = []
             
-            torch.cuda.empty_cache()
+            if mode in ("end2end", "embedding"):
+                queries = expand_batch(base_queries, bsz)
 
-        # 正式重复
-        for _ in range(repeats):
-            if mode == "end2end":
-
-                total = pipeline.measure_end2end(queries, query_type)
-                totals.append(total)
-            elif mode == "embedding":
-
-                total = pipeline.measure_embedding_only(queries, query_type)
-                totals.append(total)
-            else:  # search
+            # 预热: 调用测量函数时，use_nvtx=False
+            print(f"[{mode:<9} bsz={bsz:<5d}] Warming up for {warmup} iterations...")
+            for _ in range(warmup):
+                if mode == "end2end":
+                    measure_end2end(target_component[0], target_component[1], queries, query_type, use_nvtx=False)
+                elif mode == "embedding":
+                    measure_embedding_only(target_component, queries, query_type, use_nvtx=False)
+                else: # search
+                    qv = make_search_only_queries(dim, bsz, search_only_source, image_seed_path=image_seed_path)
+                    measure_search_only(target_component, qv, use_nvtx=False)
                 
-                qv = make_search_only_queries(
-                    pipeline, bsz, search_only_source)
-                total = pipeline.measure_search_only(qv)
-                totals.append(total)
-        
-        torch.cuda.empty_cache()
-        # 计算所有需要的百分位点
-        percentile_targets = [90, 95, 99]
-        percentile_results = calculate_percentiles(totals, percentile_targets)
-        rec = {
-            "mode": mode,
-            "batch_size": bsz,
-            "avg_total_s": float(np.mean(totals)),
-            # "p95_total_s": p95(totals),
-            "avg_per_sample_s": float(np.mean(totals)) / bsz,
-        }
-        for key, value in percentile_results.items():
-            # 将 'p90' 变成 'p90_total_s'
-            final_key = f"{key}_total_s"
-            rec[final_key] = value
+            # 正式重复: 调用测量函数时，use_nvtx=True
+            print(f"[{mode:<9} bsz={bsz:<5d}] Running {repeats} repetitions for measurement...")
+            for i in range(repeats):
+                # 为每一次重复也添加一个标记，方便在时间线上区分
+                with nvtx.annotate(f"Repeat #{i+1}", color="blue"):
+                    if mode == "end2end":
+                        total = measure_end2end(target_component[0], target_component[1], queries, query_type, use_nvtx=True)
+                    elif mode == "embedding":
+                        total = measure_embedding_only(target_component, queries, query_type, use_nvtx=True)
+                    else: # search
+                        embedding_comp_for_query_gen = target_component[0] if mode == 'end2end' else None
+                        qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
+                        total = measure_search_only(target_component, qv, use_nvtx=True)
+                    totals.append(total)
+            
 
-        # print(f"[{mode}   bsz={bsz}] total={rec['avg_total_s']:.5f}s "
-        #       f"(per-sample={rec['avg_per_sample_s']:.10f}s) p95={rec['p95_total_s']:.5f}s")
-        # 构建更详细的打印输出
-        p_str = " | ".join(
-            [f"p{p}={rec[f'p{p}_total_s']:.5f}s" for p in percentile_targets])
-        print(
-            f"[{mode}   bsz={bsz}] "
-            f"Avg Total: {rec['avg_total_s']:.5f}s | "
-            f"Avg Per-Sample: {rec['avg_per_sample_s']:.10f}s | "
-            f"Percentiles: [ {p_str} ]"
-        )
-        results.append(rec)
 
+            if not totals: continue
+
+            percentile_results = calculate_percentiles(totals, [90, 95, 99])
+            rec = {
+                "mode": mode, "batch_size": bsz,
+                "avg_total_s": float(np.mean(totals)),
+                "avg_per_sample_s": float(np.mean(totals)) / bsz,
+            }
+            rec.update({f"{k}_total_s": v for k, v in percentile_results.items()})
+
+            p_str = " | ".join([f"p{p}={v:.5f}s" for p, v in percentile_results.items()])
+            print(
+                f"[{mode:<9} bsz={bsz:<5d}] "
+                f"Avg Total: {rec['avg_total_s']:.5f}s | "
+                f"Avg Per-Sample: {rec['avg_per_sample_s']:.8f}s | "
+                f"Percentiles: [ {p_str} ]"
+            )
+            results.append(rec)
     return results
 
 
-def plot_curve(rows: List[Dict], title: str, png_path: str):
-    xs = [r["batch_size"] for r in rows]
-    ys = [r["avg_total_s"] for r in rows]
-    plt.figure(figsize=(9, 5))
-    plt.plot(xs, ys, marker="o", label=title)
-    plt.xlabel("Batch Size")
-    plt.ylabel("Per-Sample Latency (s)")
-    plt.title(title)
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(png_path), exist_ok=True)
-    plt.savefig(png_path, dpi=150)
-    print(f"[Save] PNG -> {png_path}")
 
+# -------------------------------------------------------------------
+# 3. 主程序入口 (保持不变)
+# -------------------------------------------------------------------
 
 def parse_args():
-    import argparse
-
-    ap = argparse.ArgumentParser(description="RAG latency benchmark")
-
-    # 数据 & 模型文件路径：现在都有默认值
-    ap.add_argument(
-        "--embedding_file",
-        type=str,
-        default="/mnt/d/data/wjj/cocodataset/vector/all_embeddings.npy",
-        help="Path to precomputed embedding file (.npy)",
-    )
-    ap.add_argument(
-        "--metadata_file",
-        type=str,
-        default="/mnt/d/data/wjj/cocodataset/vector/all_metadata.feather",
-        help="Path to metadata file (.feather)",
-    )
-    ap.add_argument(
-        "--model_path",
-        type=str,
-        default="/mnt/d/data/wjj/ViT-L-14.pt",
-        help="Path to embedding model weights",
-    )
-
-    # 运行配置
-    ap.add_argument(
-        "--search_type",
-        type=str,
-        default="gpu",
-        choices=["cpu", "gpu", "hybrid", "hybrid_ivf"],
-        help="Which FAISS index/search type to benchmark",
-    )
-    ap.add_argument(
-        "--mode",
-        type=str,
-        default="end2end",
-        choices=["end2end", "embedding", "search", "all"],
-        help="Which mode to benchmark",
-    )
-    ap.add_argument(
-        "--query_type",
-        type=str,
-        default="text",
-        choices=["text", "image"],
-        help="Type of query (text/image)",
-    )
-    ap.add_argument(
-        "--base_query",
-        type=str,
-        default="a dog playing on the beach",
-        help="Base query content, will be repeated for batch expansion",
-    )
-    ap.add_argument(
-        "--batch_sizes",
-        type=int,
-        nargs="+",
-        # +[i for i in range(600,6000,100)], [ 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 3072, 4096, 5120, 6144,7168 ]
-        default=[i for i in range(1000,16000, 1000)],
-        help="List of batch sizes to benchmark",
-    )
-    ap.add_argument("--repeats", type=int, default=20,
-                    help="Number of repeats per batch")
-    ap.add_argument("--warmup", type=int, default=2,
-                    help="Warmup runs before measurement")
-    ap.add_argument("--top_k", type=int, default=10,
-                    help="Top-K retrieved results")
-    ap.add_argument("--outdir", type=str, default="./outputs",
-                    help="Output directory")
-    ap.add_argument(
-        "--search_only_source",
-        type=str,
-        default="encode",
-        choices=["encode", "gaussian", "db_sample"],
-        help="Query vector source when benchmarking search-only",
-    )
-
+    ap = argparse.ArgumentParser(description="RAG 延迟基准测试 (专为 Nsight Systems 剖析优化)")
+    
+    ap.add_argument("--embedding_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_embeddings.npy")
+    ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_metadata.feather")
+    ap.add_argument("--model_path", type=str, default="/home/judy/wjj/ViT-L-14.pt")
+    
+    ap.add_argument("--mode", type=str, default="end2end", choices=["embedding", "search", "end2end"])
+    ap.add_argument("--query_type", type=str, default="text", choices=["text", "image"])
+    
+    ap.add_argument("--text_query", type=str, default="a dog playing on the beach", help="当 query_type='text' 时使用的基础查询文本。")
+    ap.add_argument("--image_query", type=str, default="/home/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
+    
+    ap.add_argument("--batch_sizes", type=int, nargs="+", default=[1000, 2000])
+    ap.add_argument("--repeats", type=int, default=3)
+    ap.add_argument("--warmup", type=int, default=2)
+    ap.add_argument("--outdir", type=str, default="./outputs_nsys")
+    ap.add_argument("--search_only_source", type=str, default="gaussian", choices=["encode", "gaussian"])
+    
     return ap.parse_args()
-
 
 def main():
     args = parse_args()
-    pipe = PipelineRAG(
-        embedding_file_path=args.embedding_file,
-        metadata_file_path=args.metadata_file,
-        embedding_model_path=args.model_path,
-        search_type=args.search_type,
-        top_k=args.top_k,
-    )
-
     os.makedirs(args.outdir, exist_ok=True)
-    base_queries = [args.base_query]
 
-    collected = []
+    if args.query_type == "text":
+        base_queries = [args.text_query]
+        print(f"测试模式: 文本查询, 内容: '{args.text_query}'")
+    elif args.query_type == "image":
+        base_queries = [args.image_query]
+        print(f"测试模式: 图片查询, 路径: '{args.image_query}'")
+        if not os.path.exists(args.image_query):
+            print(f"错误: 找不到指定的图片文件: {args.image_query}")
+            return
+    else:
+        print(f"错误: 不支持的 query_type '{args.query_type}'")
+        return
 
-    run_modes = (
-        ["end2end", "embedding", "search"]
-        if args.mode == "all" else [args.mode]
+    embedding_comp = None
+    search_comp = None
+    target_component = None
+
+    print("-" * 40)
+    print(f"开始执行模式: {args.mode.upper()}")
+    print("-" * 40)
+
+    if args.mode in ["embedding", "end2end"]:
+        embedding_comp = EmbeddingComponent(args.model_path)
+    
+    if args.mode in ["search", "end2end"]:
+        if args.search_only_source == 'encode' and not embedding_comp:
+            print("[注意] search-only 模式使用 'encode' 源，需要临时加载 embedding 模型...")
+            embedding_comp = EmbeddingComponent(args.model_path)
+        search_comp = SearchComponent(args.embedding_file, args.metadata_file)
+
+    if args.mode == "embedding":
+        target_component = embedding_comp
+    elif args.mode == "search":
+        target_component = search_comp
+    elif args.mode == "end2end":
+        target_component = (embedding_comp, search_comp)
+    
+    if target_component is None:
+        raise ValueError(f"模式 '{args.mode}' 初始化失败，无有效组件。")
+    
+    rows = run_benchmark(
+        target_component=target_component,
+        mode=args.mode,
+        base_queries=base_queries,
+        query_type=args.query_type,
+        batch_sizes=args.batch_sizes,
+        repeats=args.repeats,
+        warmup=args.warmup,
+        search_only_source=args.search_only_source,
+        image_seed_path=args.image_query if args.query_type == 'image' else None
     )
 
-    for mode in run_modes:
-        rows = run_benchmark(
-            pipeline=pipe,
-            mode=mode,
-            base_queries=base_queries,
-            query_type=args.query_type,
-            batch_sizes=args.batch_sizes,
-            repeats=args.repeats,
-            warmup=args.warmup,
-            search_only_source=args.search_only_source,
-        )
-        collected.extend(rows)
-
-        # 单独各画一张图
-        png_path = os.path.join(
-            args.outdir, f"{args.search_type}_{mode}_latency.png")
-        plot_curve(rows, f"{mode.upper()} —  Latency vs Batch Size", png_path)
 
 
 if __name__ == "__main__":
     main()
+
+
+'''
+sudo nsys profile \
+    --trace=cuda,cudnn,cublas,nvtx,osrt  \
+    -o outputs_nsys/text_emb \
+    --force-overwrite true \
+    --stats=true \
+    --gpu-metrics-devices=0  \    
+    $(which python) test_system.py \
+        --batch_sizes 1000 4000  \
+        --repeats 1 \
+        --warmup 1 \
+        --query_type text \
+        --mode embedding 
+        
+8000 10000 12000 14000
+'''

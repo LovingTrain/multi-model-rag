@@ -4,7 +4,7 @@ import time
 import argparse
 from typing import List, Dict, Tuple, Union
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import torch
 import nvtx
 
@@ -207,11 +207,11 @@ def run_benchmark(
                 qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
                 total = measure_search_only(target_component, qv)
             totals.append(total)
-            torch.cuda.empty_cache()
+            
 
         if not totals: continue
 
-        percentile_results = calculate_percentiles(totals, [90, 95, 99])
+        percentile_results = calculate_percentiles(totals, [50,90, 95, 99])
         rec = {
             "mode": mode, "batch_size": bsz,
             "avg_total_s": float(np.mean(totals)),
@@ -229,21 +229,7 @@ def run_benchmark(
         results.append(rec)
     return results
 
-def plot_curve(rows: List[Dict], title: str, png_path: str):
-    # ... (此函数无需修改)
-    xs = [r["batch_size"] for r in rows]
-    ys = [r["avg_total_s"] for r in rows]
-    plt.figure(figsize=(9, 5))
-    plt.plot(xs, ys, marker="o", label=title)
-    plt.xlabel("Batch Size")
-    plt.ylabel("Total Latency (s)")
-    plt.title(title)
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    os.makedirs(os.path.dirname(png_path), exist_ok=True)
-    plt.savefig(png_path, dpi=150)
-    print(f"[保存] PNG -> {png_path}")
+
 
 # -------------------------------------------------------------------
 # 3. 主程序入口
@@ -253,9 +239,9 @@ def parse_args():
     ap = argparse.ArgumentParser(description="RAG 延迟基准测试 (支持图片和文本)")
     
     # 文件路径
-    ap.add_argument("--embedding_file", type=str, default="/mnt/d/data/wjj/cocodataset/vector/all_embeddings.npy")
-    ap.add_argument("--metadata_file", type=str, default="/mnt/d/data/wjj/cocodataset/vector/all_metadata.feather")
-    ap.add_argument("--model_path", type=str, default="/mnt/d/data/wjj/ViT-L-14.pt")
+    ap.add_argument("--embedding_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_embeddings.npy")
+    ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_metadata.feather")
+    ap.add_argument("--model_path", type=str, default="/home/judy/wjj/ViT-L-14.pt")
     
     # 运行配置
     ap.add_argument("--mode", type=str, default="end2end", choices=["embedding", "search", "end2end"])
@@ -265,8 +251,8 @@ def parse_args():
     ap.add_argument("--text_query", type=str, default="a dog playing on the beach", help="当 query_type='text' 时使用的基础查询文本。")
     ap.add_argument("--image_query", type=str, default="/home/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
     # default=[1000, 3000,5000]+[i for i in range(10000,100000,10000)]
-    ap.add_argument("--batch_sizes", type=int, nargs="+", default=[i for i in range(1000,17000,1000)])
-    ap.add_argument("--repeats", type=int, default=2)
+    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(20000,100000,10000)])
+    ap.add_argument("--repeats", type=int, default=100)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--outdir", type=str, default="./outputs_simplified")
     ap.add_argument("--search_only_source", type=str, default="gaussian", choices=["encode", "gaussian"])
