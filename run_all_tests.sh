@@ -44,13 +44,13 @@ COMMANDS_TO_RUN=(
     # "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 1000 2000"
     # "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 3000 --repeats 10"
 
-    "python test_memory.py --mode embedding --batch_sizes [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]  "
-    "python test_memory.py --mode end2end --batch_sizes [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]  "
-    "python test_memory.py --mode search --batch_sizes [1000,  3000,  5000, 10000, 20000, 30000,40000, 50000, 60000, 70000]"
+    "python test_memory.py --mode embedding --batch_sizes 1000 2000 3000 4000 5000 6000 7000 8000"
+    "python test_memory.py --mode end2end --batch_sizes 1000 2000 3000 4000 5000 6000 7000 8000"
+    "python test_memory.py --mode search --batch_sizes 1000 3000 5000 10000 20000 30000 40000 50000 60000 70000"
     "python test_memory.py --mode end2end --query_type image --batch_sizes 1000 2000"
-    "python test_memory.py --mode end2end --query_type image --batch_sizes 3000 "
-    "python test_memory.py --mode embedding --query_type image --batch_sizes 1000 2000 "
-    "python test_memory.py --mode embedding --query_type image --batch_sizes 3000 "
+    "python test_memory.py --mode end2end --query_type image --batch_sizes 3000"
+    "python test_memory.py --mode embedding --query_type image --batch_sizes 1000 2000"
+    "python test_memory.py --mode embedding --query_type image --batch_sizes 3000"
 
 
 )
