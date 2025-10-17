@@ -32,17 +32,27 @@ OUTPUT_FILE="stress_test_log.txt"
 TMUX_SESSION_NAME="rag_stress_test"
 
 # 休眠时间 (单位: 秒), 15分钟 = 900 秒
-SLEEP_DURATION=600
+SLEEP_DURATION=10
 
 # --- 您要执行的命令列表 ---
 COMMANDS_TO_RUN=(
-    "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 1000 --repeats 1"
-    "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 1000 2000 3000 4000 5000 6000 7000 8000"
-    "python ${PYTHON_SCRIPT} --mode embedding  --batch_sizes 13000 14000 15000 16000 --repeats 50"
-    "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 1000 2000"
-    "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 3000 --repeats 10"
-    "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 1000 2000"
-    "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 3000 --repeats 10"
+    # "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 1000 --repeats 1"
+    # "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 1000 2000 3000 4000 5000 6000 7000 8000"
+    # "python ${PYTHON_SCRIPT} --mode embedding  --batch_sizes 13000 14000 15000 16000 --repeats 50"
+    # "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 1000 2000"
+    # "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 3000 --repeats 10"
+    # "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 1000 2000"
+    # "python ${PYTHON_SCRIPT} --mode embedding --query_type image --batch_sizes 3000 --repeats 10"
+
+    "python test_memory.py --mode embedding --batch_sizes [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]  "
+    "python test_memory.py --mode end2end --batch_sizes [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]  "
+    "python test_memory.py --mode search --batch_sizes [1000,  3000,  5000, 10000, 20000, 30000,40000, 50000, 60000, 70000]"
+    "python test_memory.py --mode end2end --query_type image --batch_sizes 1000 2000"
+    "python test_memory.py --mode end2end --query_type image --batch_sizes 3000 "
+    "python test_memory.py --mode embedding --query_type image --batch_sizes 1000 2000 "
+    "python test_memory.py --mode embedding --query_type image --batch_sizes 3000 "
+
+
 )
 
 
