@@ -238,16 +238,16 @@ def parse_args():
     ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_metadata.feather")
     ap.add_argument("--model_path", type=str, default="/home/judy/wjj/ViT-L-14.pt")
     
-    ap.add_argument("--mode", type=str, default="end2end", choices=["embedding", "search", "end2end"])
+    ap.add_argument("--mode", type=str, default="embedding", choices=["embedding", "search", "end2end"])
     ap.add_argument("--query_type", type=str, default="text", choices=["text", "image"])
     
     ap.add_argument("--text_query", type=str, default="a dog playing on the beach", help="当 query_type='text' 时使用的基础查询文本。")
-    ap.add_argument("--image_query", type=str, default="/home/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
+    ap.add_argument("--image_query", type=str, default="/home/judy/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
     
-    ap.add_argument("--batch_sizes", type=int, nargs="+", default=[1000, 2000])
-    ap.add_argument("--repeats", type=int, default=3)
+    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(6000,12000,1000)])
+    ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--warmup", type=int, default=2)
-    ap.add_argument("--outdir", type=str, default="./outputs_nsys")
+    ap.add_argument("--outdir", type=str, default="./outputs")
     ap.add_argument("--search_only_source", type=str, default="gaussian", choices=["encode", "gaussian"])
     
     return ap.parse_args()
@@ -315,18 +315,15 @@ if __name__ == "__main__":
 
 
 '''
-sudo nsys profile \
-    --trace=cuda,cudnn,cublas,nvtx,osrt  \
-    -o outputs_nsys/text_emb \
+sudo nsys profile -w true \
+    --trace=cudnn,nvtx,osrt  \
+    -o outputs/img_embed \
     --force-overwrite true \
+    --gpu-metrics-device=all \
     --stats=true \
-    --gpu-metrics-devices=0  \    
-    $(which python) test_system.py \
-        --batch_sizes 1000 4000  \
-        --repeats 1 \
-        --warmup 1 \
-        --query_type text \
-        --mode embedding 
+    /home/judy/miniconda3/envs/rag/bin/python test_system.py \
+        --query_type image \
+        --mode embedding --batch_sizes 1000 2000 5000 10000 20000 30000 40000 50000 60000 70000
         
 8000 10000 12000 14000
 '''

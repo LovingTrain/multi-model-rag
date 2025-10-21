@@ -82,10 +82,8 @@ class PipelineRAG:
 
     def measure_search_only(self, query_vectors: np.ndarray) -> float:
         maybe_cuda_sync()
-        with nvtx.annotate(f"search txt | {len(query_vectors)}", color="green"):
-            t0 = now()
-            _ = self._search(query_vectors)
-
+        t0 = now()
+        _ = self._search(query_vectors)
         maybe_cuda_sync()
         return now() - t0
 
@@ -109,9 +107,11 @@ def make_search_only_queries(
     text_seed: str = "a dog playing on the beach"
 ) -> np.ndarray:
 
-    emb = pipeline._encode([text_seed], query_type="text")
+    q = np.random.randn(bsz, dim).astype(np.float32)
+    norm = np.linalg.norm(q, axis=1, keepdims=True) + 1e-9
+    return (q / norm).astype(np.float32)
 
-    return np.vstack([emb] * bsz)
+    # return np.vstack([emb] * bsz)
 
 
 def parse_args():
@@ -120,24 +120,9 @@ def parse_args():
     ap = argparse.ArgumentParser(description="RAG latency benchmark")
 
     # 数据 & 模型文件路径：现在都有默认值
-    ap.add_argument(
-        "--embedding_file",
-        type=str,
-        default="/mnt/sdc/wjj/data/index-data/all_embeddings.npy",
-        help="Path to precomputed embedding file (.npy)",
-    )
-    ap.add_argument(
-        "--metadata_file",
-        type=str,
-        default="/mnt/sdc/wjj/data/index-data/all_metadata.feather",
-        help="Path to metadata file (.feather)",
-    )
-    ap.add_argument(
-        "--model_path",
-        type=str,
-        default="/mnt/sdc/wjj/ViT-L-14.pt",
-        help="Path to embedding model weights",
-    )
+    ap.add_argument("--embedding_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_embeddings.npy")
+    ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_metadata.feather")
+    ap.add_argument("--model_path", type=str, default="/home/judy/wjj/ViT-L-14.pt")
 
     # 运行配置
     ap.add_argument(
@@ -171,7 +156,7 @@ def parse_args():
         "--batch_sizes",
         type=int,
         nargs="+",
-        default=[i for i in range(1000, 9000, 1000)],
+        default=[1000,3000,5000]+[i for i in range(10000, 80000, 10000)],
         help="List of batch sizes to benchmark",
     )
     ap.add_argument("--repeats", type=int, default=1,
@@ -185,7 +170,7 @@ def parse_args():
     ap.add_argument(
         "--search_only_source",
         type=str,
-        default="encode",
+        default="gaussian",
         choices=["encode", "gaussian", "db_sample"],
         help="Query vector source when benchmarking search-only",
     )
@@ -215,7 +200,7 @@ def main():
     for bsz in args.batch_sizes:
 
         print(f"\n[INFO] Starting profiling for batch_size = {bsz}")
-        prof_output_dir = os.path.join("/mnt/sdc/wjj/prof", f"bsz_{bsz}")
+        prof_output_dir = os.path.join("/home/judy/wjj/multi-model-rag/outputs",f"{mode}_{args.query_type}", f"bsz_{bsz}")
         os.makedirs(prof_output_dir, exist_ok=True)
 
         if mode in ("end2end", "embedding"):
@@ -224,7 +209,7 @@ def main():
             qv = make_search_only_queries(
                 pipeline, bsz, args.search_only_source)
 
-        torch.cuda.empty_cache()
+        
         with profile(
             activities=activities,
             schedule=prof_schedule,
@@ -253,3 +238,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python tensorboard.py --mode search

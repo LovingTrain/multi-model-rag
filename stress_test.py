@@ -195,7 +195,7 @@ def run_benchmark(
             else: # search
                 qv = make_search_only_queries(dim, bsz, search_only_source, image_seed_path=image_seed_path)
                 measure_search_only(target_component, qv)
-            
+        torch.cuda.empty_cache() 
         # 正式重复
         for _ in range(repeats):
             if mode == "end2end":
@@ -207,7 +207,7 @@ def run_benchmark(
                 qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
                 total = measure_search_only(target_component, qv)
             totals.append(total)
-            
+        torch.cuda.empty_cache()    
 
         if not totals: continue
 
@@ -249,9 +249,9 @@ def parse_args():
     
     # === 主要改动点 3: 增加图片查询参数 ===
     ap.add_argument("--text_query", type=str, default="a dog playing on the beach", help="当 query_type='text' 时使用的基础查询文本。")
-    ap.add_argument("--image_query", type=str, default="/home/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
+    ap.add_argument("--image_query", type=str, default="/home/judy/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
     # default=[1000, 3000,5000]+[i for i in range(10000,100000,10000)]
-    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(20000,100000,10000)])
+    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(1000,100000,1000)])
     ap.add_argument("--repeats", type=int, default=100)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--outdir", type=str, default="./outputs_simplified")
@@ -319,10 +319,7 @@ def main():
         image_seed_path=args.image_query if args.query_type == 'image' else None
     )
 
-    # --- 保存结果和绘图 ---
-    if rows:
-        png_path = os.path.join(args.outdir, f"{args.query_type}_{args.mode}_latency.png")
-        plot_curve(rows, f"{args.query_type.capitalize()} {args.mode.upper()} Latency vs Batch Size (GPU Search)", png_path)
+    
 
 if __name__ == "__main__":
-    main()
+    main() 

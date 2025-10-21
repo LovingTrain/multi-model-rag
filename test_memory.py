@@ -6,7 +6,13 @@ from typing import List, Dict, Tuple, Union
 import numpy as np
 
 import threading
-from pynvml import *
+from pynvml import (
+    nvmlInit, 
+    nvmlShutdown, 
+    nvmlDeviceGetHandleByIndex, 
+    nvmlDeviceGetMemoryInfo,
+    nvmlDeviceGetUtilizationRates
+)
 import numpy as np
 import time
 
@@ -139,7 +145,13 @@ def run_benchmark_memory(
             "max_vram_used_gb": gpu_stats['max_vram_used_mb'], # 键名来自Profiler，但值是GB
         }
         results.append(rec)
-        
+            
+        # row = (
+        #     f"{rec['mode']:<10} | {rec['batch_size']:>10d} | "
+        #     f"{rec['avg_gpu_util']:>11.2f} | {rec['max_gpu_util']:>11.2f} | "
+        #     f"{rec['avg_vram_used_gb']:>12.3f} | {rec['max_vram_used_gb']:>13.3f}" # 使用 .3f 以更好地显示GB单位
+        # )
+        # print(row)
     return results
 
 
@@ -147,6 +159,7 @@ def run_benchmark_memory(
 
 def main():
     args = parse_args()
+    
     os.makedirs(args.outdir, exist_ok=True)
 
     # === 主要改动点 4: 根据 query_type 选择基础查询内容 ===

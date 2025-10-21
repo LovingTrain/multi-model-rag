@@ -1,0 +1,247 @@
+自动化测试已在 TMUX 会话 'rag_stress_test_mem' 中启动。
+测试开始时间: 2025年 10月 18日 星期六 00:25:36 CST
+
+======================================================================
+>>> [2025-10-18 00:25:36] EXECUTING COMMAND 1 / 6:
+>>> python stress_test.py --mode end2end --batch_sizes 9000 10000 10000 11000
+----------------------------------------------------------------------
+/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  import pynvml  # type: ignore[import]
+测试模式: 文本查询, 内容: 'a dog playing on the beach'
+----------------------------------------
+开始执行模式: END2END
+----------------------------------------
+[组件] 正在初始化 EmbeddingComponent...
+[组件] EmbeddingComponent 初始化完成。
+[组件] 正在初始化 SearchComponent (仅限 GPU)...
+[组件] SearchComponent (GPU) 初始化完成。
+Traceback (most recent call last):
+  File "/home/judy/wjj/multi-model-rag/stress_test.py", line 325, in <module>
+    main()
+  File "/home/judy/wjj/multi-model-rag/stress_test.py", line 310, in main
+    rows = run_benchmark(
+           ^^^^^^^^^^^^^^
+  File "/home/judy/wjj/multi-model-rag/stress_test.py", line 192, in run_benchmark
+    measure_end2end(target_component[0], target_component[1], queries, query_type)
+  File "/home/judy/wjj/multi-model-rag/stress_test.py", line 131, in measure_end2end
+    _ = search_comp.search(query_vectors)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/judy/wjj/multi-model-rag/stress_test.py", line 88, in search
+    return self.searcher.gpu_search(self.index, query_vectors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/judy/wjj/multi-model-rag/src/search_faiss.py", line 136, in gpu_search
+    distances, indices = gpu_search_index.search(query_vector, k)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/faiss/class_wrappers.py", line 343, in replacement_search
+    self.search_c(n, swig_ptr(x), k, swig_ptr(D), swig_ptr(I), params)
+  File "/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/faiss/swigfaiss_avx512.py", line 11885, in search
+    return _swigfaiss_avx512.GpuIndex_search(self, n, x, k, distances, labels, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Error in virtual void* faiss::gpu::StandardGpuResourcesImpl::allocMemory(const faiss::gpu::AllocRequest&) at /home/runner/miniconda3/conda-bld/faiss-pkg_1728491247778/work/faiss/gpu/StandardGpuResources.cpp:555: Error: 'err == cudaSuccess' failed: StandardGpuResources: alloc fail type TemporaryMemoryOverflow dev 0 space Device stream 0x12184cd0 size 3538944000 bytes (cudaMalloc error out of memory [2])
+
+----------------------------------------------------------------------
+!!! WARNING: 上一条命令执行失败 (退出码: 1)。
+
+----------------------------------------------------------------------
+>>> 命令执行完毕，将休眠 3 分钟...
+>>> 下一条命令将在 2025-10-18 00:29:03 左右开始执行。
+----------------------------------------------------------------------
+
+======================================================================
+>>> [2025-10-18 00:29:03] EXECUTING COMMAND 2 / 6:
+>>> python test_memory.py --mode embedding --batch_sizes 1000 2000 3000 4000 5000 6000 7000 8000 9000  
+----------------------------------------------------------------------
+/home/judy/wjj/multi-model-rag/test_memory.py:9: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  from pynvml import (
+测试模式: 文本查询, 内容: 'a dog playing on the beach'
+----------------------------------------
+开始执行模式: EMBEDDING
+----------------------------------------
+[组件] 正在初始化 EmbeddingComponent...
+[组件] EmbeddingComponent 初始化完成。
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+
+====================================================================================
+                              GPU 资源占用测试结果
+====================================================================================
+Mode       | Batch Size |  Avg GPU(%) | Peak GPU(%) | Avg VRAM(GB) | Peak VRAM(GB)
+------------------------------------------------------------------------------------
+embedding  |       1000 |        7.69 |       81.00 |        4.956 |         4.956
+embedding  |       2000 |       81.00 |       81.00 |        8.930 |         8.930
+embedding  |       3000 |       87.68 |       95.00 |       14.883 |        14.883
+embedding  |       4000 |       89.84 |      100.00 |       20.174 |        20.174
+embedding  |       5000 |       93.69 |      100.00 |       26.784 |        26.784
+embedding  |       6000 |      100.00 |      100.00 |       14.872 |        14.872
+embedding  |       7000 |      100.00 |      100.00 |       24.130 |        24.130
+embedding  |       8000 |      100.00 |      100.00 |       23.241 |        23.241
+embedding  |       9000 |       84.96 |      100.00 |       21.479 |        21.479
+------------------------------------------------------------------------------------
+--- Command completed successfully (exit code: 0) ---
+
+----------------------------------------------------------------------
+>>> 命令执行完毕，将休眠 3 分钟...
+>>> 下一条命令将在 2025-10-18 01:29:43 左右开始执行。
+----------------------------------------------------------------------
+
+======================================================================
+>>> [2025-10-18 01:29:43] EXECUTING COMMAND 3 / 6:
+>>> python test_memory.py --mode embedding --batch_sizes 10000 
+----------------------------------------------------------------------
+/home/judy/wjj/multi-model-rag/test_memory.py:9: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  from pynvml import (
+测试模式: 文本查询, 内容: 'a dog playing on the beach'
+----------------------------------------
+开始执行模式: EMBEDDING
+----------------------------------------
+[组件] 正在初始化 EmbeddingComponent...
+[组件] EmbeddingComponent 初始化完成。
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+
+====================================================================================
+                              GPU 资源占用测试结果
+====================================================================================
+Mode       | Batch Size |  Avg GPU(%) | Peak GPU(%) | Avg VRAM(GB) | Peak VRAM(GB)
+------------------------------------------------------------------------------------
+embedding  |      10000 |       76.98 |      100.00 |       31.717 |        31.717
+------------------------------------------------------------------------------------
+--- Command completed successfully (exit code: 0) ---
+
+----------------------------------------------------------------------
+>>> 命令执行完毕，将休眠 3 分钟...
+>>> 下一条命令将在 2025-10-18 01:46:01 左右开始执行。
+----------------------------------------------------------------------
+
+======================================================================
+>>> [2025-10-18 01:46:01] EXECUTING COMMAND 4 / 6:
+>>> python test_memory.py --mode embedding --batch_sizes 11000 
+----------------------------------------------------------------------
+/home/judy/wjj/multi-model-rag/test_memory.py:9: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  from pynvml import (
+测试模式: 文本查询, 内容: 'a dog playing on the beach'
+----------------------------------------
+开始执行模式: EMBEDDING
+----------------------------------------
+[组件] 正在初始化 EmbeddingComponent...
+[组件] EmbeddingComponent 初始化完成。
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+
+====================================================================================
+                              GPU 资源占用测试结果
+====================================================================================
+Mode       | Batch Size |  Avg GPU(%) | Peak GPU(%) | Avg VRAM(GB) | Peak VRAM(GB)
+------------------------------------------------------------------------------------
+embedding  |      11000 |       88.96 |      100.00 |       22.577 |        22.577
+------------------------------------------------------------------------------------
+--- Command completed successfully (exit code: 0) ---
+
+----------------------------------------------------------------------
+>>> 命令执行完毕，将休眠 3 分钟...
+>>> 下一条命令将在 2025-10-18 02:03:35 左右开始执行。
+----------------------------------------------------------------------
+
+======================================================================
+>>> [2025-10-18 02:03:35] EXECUTING COMMAND 5 / 6:
+>>> python test_memory.py --mode search --batch_sizes 1000 3000 5000 10000 20000 30000 40000 50000 60000 70000
+----------------------------------------------------------------------
+/home/judy/wjj/multi-model-rag/test_memory.py:9: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  from pynvml import (
+测试模式: 文本查询, 内容: 'a dog playing on the beach'
+----------------------------------------
+开始执行模式: SEARCH
+----------------------------------------
+[组件] 正在初始化 SearchComponent (仅限 GPU)...
+[组件] SearchComponent (GPU) 初始化完成。
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+
+====================================================================================
+                              GPU 资源占用测试结果
+====================================================================================
+Mode       | Batch Size |  Avg GPU(%) | Peak GPU(%) | Avg VRAM(GB) | Peak VRAM(GB)
+------------------------------------------------------------------------------------
+search     |       1000 |        0.00 |        0.00 |        2.921 |         2.921
+search     |       3000 |        0.00 |        0.00 |        2.921 |         2.921
+search     |       5000 |       45.12 |       60.00 |        4.136 |         4.753
+search     |      10000 |       62.65 |       68.00 |        5.364 |         6.583
+search     |      20000 |       59.66 |      100.00 |        7.768 |        10.245
+search     |      30000 |      100.00 |      100.00 |       10.188 |        13.907
+search     |      40000 |       66.91 |      100.00 |       12.613 |        17.569
+search     |      50000 |       75.74 |      100.00 |       15.057 |        21.231
+search     |      60000 |       50.11 |      100.00 |       17.487 |        24.893
+search     |      70000 |       68.92 |      100.00 |       19.897 |        28.555
+------------------------------------------------------------------------------------
+--- Command completed successfully (exit code: 0) ---
+
+----------------------------------------------------------------------
+>>> 命令执行完毕，将休眠 3 分钟...
+>>> 下一条命令将在 2025-10-18 03:08:39 左右开始执行。
+----------------------------------------------------------------------
+
+======================================================================
+>>> [2025-10-18 03:08:39] EXECUTING COMMAND 6 / 6:
+>>> python test_memory.py --mode embedding --query_type image --batch_sizes 1000 2000
+----------------------------------------------------------------------
+/home/judy/wjj/multi-model-rag/test_memory.py:9: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
+  from pynvml import (
+测试模式: 图片查询, 路径: '/home/judy/wjj/multi-model-rag/data/space.png'
+----------------------------------------
+开始执行模式: EMBEDDING
+----------------------------------------
+[组件] 正在初始化 EmbeddingComponent...
+[组件] EmbeddingComponent 初始化完成。
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+[Profiler] Starting GPU monitoring...
+[Profiler] Stopped GPU monitoring.
+
+====================================================================================
+                              GPU 资源占用测试结果
+====================================================================================
+Mode       | Batch Size |  Avg GPU(%) | Peak GPU(%) | Avg VRAM(GB) | Peak VRAM(GB)
+------------------------------------------------------------------------------------
+embedding  |       1000 |       56.95 |      100.00 |       16.342 |        16.342
+embedding  |       2000 |       56.82 |      100.00 |       23.417 |        23.417
+------------------------------------------------------------------------------------
+--- Command completed successfully (exit code: 0) ---
+======================================================================
+所有测试已全部执行完毕！
+您可以随时使用 'exit' 命令或按 Ctrl+D 来关闭此 TMUX 会话。
+完整日志已保存在 'stress_test_log_mem.txt' 文件中。
+======================================================================
