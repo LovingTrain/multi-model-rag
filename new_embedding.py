@@ -42,6 +42,8 @@ class Embedding_e5():
         self.model.eval() # 将模型设置为评估模式
         self.mode = 'e5-mistral'
         self.batch_sizes=[500,1000,1500,1600,1700,1800,2000,2100,2200]
+        self.prompt_length=128
+
         self.warmup = 2
         self.repeats=10
 
@@ -55,23 +57,26 @@ class Embedding_e5():
             batch_size = last_hidden_states.shape[0]
             return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
     
-    def expand_batch(self,batchsize):
-        input_texts = [
-            'Instruct: How to bake a delicious chocolate cake?',
-            'Passage: Baking a chocolate cake involves mixing flour, sugar, cocoa powder, and eggs. First, preheat your oven to 350°F (175°C). Then, grease and flour a 9-inch round baking pan.',
-            'Passage: The history of the Eiffel Tower dates back to the 1889 Exposition Universelle (World\'s Fair) held in Paris.',
-            'This is a standalone sentence without any prefix.'
-        ]   
-        # 扩充
-        expanded_texts = [input_texts[i % len(input_texts)] for i in range(batchsize)]
-        return expanded_texts
+    def generate_batch(self, batch_size):
+
+        base_text = "This is a test sentence for generating a long prompt. "
+        base_tokens = self.tokenizer.encode(base_text, add_special_tokens=False)
+        if not base_tokens: raise ValueError("Tokenizer produced empty tokens.")
+        
+        repeated_tokens = []
+        while len(repeated_tokens) < self.prompt_length:
+            repeated_tokens.extend(base_tokens)
+        
+        final_tokens = repeated_tokens[:self.prompt_length]
+        long_prompt_text = self.tokenizer.decode(final_tokens, skip_special_tokens=True)
+        return [long_prompt_text] * batch_size
 
     def batch_encode(self,input_texts):
         with torch.no_grad():
             # 将文本列表分词，并移动到GPU
             batch_dict = self.tokenizer(
                 input_texts, 
-                max_length=4096//16,  # e5-mistral支持长达4096的上下文
+                max_length=4096,  # e5-mistral支持长达4096的上下文
                 padding=True, 
                 truncation=True, 
                 return_tensors='pt'
@@ -312,14 +317,14 @@ class Embedding_idefics2():
         
 if __name__ == '__main__':
     # 运行 E5 文本 embedding 测试 (可选)
-    # print("Initializing e5-mistral-7b-instruct model...")
-    # text_model = Embedding_e5(model_path="/home/judy/wjj/multi-model-rag/e5-mistral-7b-instruct")  
-    # text_model.measure_embedding()
+    print("Initializing e5-mistral-7b-instruct model...")
+    text_model = Embedding_e5(model_path="/home/judy/wjj/multi-model-rag/e5-mistral-7b-instruct")  
+    text_model.measure_embedding()
 
     # 运行 Idefics2 图片 embedding 测试
-    print("\nInitializing HuggingFaceM4/idefics2-8b model...")
-    # 请确保这里的 image_path 是正确的
-    image_model = Embedding_idefics2(
-    )
-    # image_model.measure_embedding()
-    image_model.process_database()
+    # print("\nInitializing HuggingFaceM4/idefics2-8b model...")
+    # # 请确保这里的 image_path 是正确的
+    # image_model = Embedding_idefics2(
+    # )
+    # # image_model.measure_embedding()
+    # image_model.process_database()

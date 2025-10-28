@@ -25,7 +25,7 @@
 
 # --- 配置 ---
 # 脚本和日志文件
-PYTHON_SCRIPT="stress_test.py"
+PYTHON_SCRIPT="new_stress_test.py"
 OUTPUT_FILE="stress_test_log_mem.txt"
 
 # TMUX 配置
@@ -37,7 +37,7 @@ SLEEP_DURATION=200
 # --- 您要执行的命令列表 ---
 COMMANDS_TO_RUN=(
     # "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 1000 --repeats 1"
-    "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 9000 10000 10000 11000"
+    "python ${PYTHON_SCRIPT} --mode end2end --batch_sizes 100 200 300 400 500 600 700"
     # "python ${PYTHON_SCRIPT} --mode embedding  --batch_sizes 13000 14000 15000 16000 --repeats 50"
     # "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 1000 2000"
     # "python ${PYTHON_SCRIPT} --mode end2end --query_type image --batch_sizes 3000 --repeats 10"

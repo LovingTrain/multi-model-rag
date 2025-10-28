@@ -6,8 +6,11 @@ from typing import List, Dict, Tuple, Union
 import numpy as np
 #import matplotlib.pyplot as plt
 import torch
-import nvtx
+from torch import Tensor
+from transformers import AutoTokenizer, AutoModel
 
+import nvtx
+import torch.nn.functional as F
 # 导入 Pillow 库用于处理图片
 try:
     from PIL import Image
@@ -19,54 +22,11 @@ except ImportError:
 from src.encode_mode import EmbeddingMode
 from src.search_faiss import FaissSearcher
 
-# -------------------------------------------------------------------
-# 1. 核心组件定义 (已解耦)
-# -------------------------------------------------------------------
 
-class EmbeddingComponent:
-    """
-    只负责 Embedding 模型的加载和推理。
-    """
-    def __init__(self, model_path: str):
-        print(f"[组件] 正在初始化 EmbeddingComponent...")
-        self.model = EmbeddingMode(model_path=model_path)
-        # print(f"30s watching time")
-        # time.sleep(30)
-        print(f"[组件] EmbeddingComponent 初始化完成。")
-
-    def encode(self, queries: list, query_type: str) -> np.ndarray:
-        """
-        执行编码操作。
-        对于图片，queries 列表包含的是图片文件路径。
-        """
-        if query_type == "text":
-            # 文本查询直接传递
-            vecs = self.model.encoding_query_text(queries)
-        elif query_type == "image":
-            # === 主要改动点 1: 处理图片输入 ===
-            # 检查文件是否存在
-            for path in queries:
-                if not os.path.exists(path):
-                    raise FileNotFoundError(f"图片文件未找到: {path}")
-            
-            # 使用 Pillow 读取图片并转换为 Image 对象列表
-            # 假设您的 `encoding_query_image` 方法接收的是 PIL.Image 对象列表
-
-            image_batch = self.model.process_batch_images(queries)
-            vecs = self.model.encoding_query_image(image_batch)
-        else:
-            raise ValueError(f"不支持的 query_type: {query_type}")
-
-        # 转换成 numpy 数组
-        if hasattr(vecs, "detach"):
-            vecs = vecs.detach().cpu().numpy()
-        elif isinstance(vecs, list):
-            vecs = np.asarray(vecs, dtype=np.float32)
-        return vecs.astype(np.float32)
 
 class NewEmbeddingComponent:
 
-    def __init__(self, model_path: str):
+    def __init__(self, prompt_length: str):
         print(f"[组件] 正在初始化 EmbeddingComponent...")
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         # print(f"30s watching time")
@@ -81,36 +41,51 @@ class NewEmbeddingComponent:
         )
         self.model.eval() # 将模型设置为评估模式
         self.mode = 'e5-mistral'
-        self.prompt_length=128
+        self.prompt_length= prompt_length
 
         print(f"[组件] EmbeddingComponent 初始化完成。")
 
-    def encode(self, queries: list, query_type: str) -> np.ndarray:
-        """
-        执行编码操作。
-        对于图片，queries 列表包含的是图片文件路径。
-        """
-        if query_type == "text":
-            # 文本查询直接传递
-            vecs = self.model.encoding_query_text(queries)
-        elif query_type == "image":
-            # === 主要改动点 1: 处理图片输入 ===
-            # 检查文件是否存在
-            for path in queries:
-                if not os.path.exists(path):
-                    raise FileNotFoundError(f"图片文件未找到: {path}")
-            
-            # 使用 Pillow 读取图片并转换为 Image 对象列表
-            # 假设您的 `encoding_query_image` 方法接收的是 PIL.Image 对象列表
+    def last_token_pool(self,last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
 
-            image_batch = self.model.process_batch_images(queries)
-            vecs = self.model.encoding_query_image(image_batch)
+        left_padding = (attention_mask[:, -1].sum() == attention_mask.shape[0])
+        if left_padding:
+            return last_hidden_states[:, -1]
         else:
-            raise ValueError(f"不支持的 query_type: {query_type}")
+            sequence_lengths = attention_mask.sum(dim=1) - 1
+            batch_size = last_hidden_states.shape[0]
+            return last_hidden_states[torch.arange(batch_size, device=last_hidden_states.device), sequence_lengths]
+    
+    def expand_batch(self, batch_size):
+
+        base_text = "This is a test sentence for generating a long prompt. "
+        base_tokens = self.tokenizer.encode(base_text, add_special_tokens=False)
+        if not base_tokens: raise ValueError("Tokenizer produced empty tokens.")
+        
+        repeated_tokens = []
+        while len(repeated_tokens) < self.prompt_length:
+            repeated_tokens.extend(base_tokens)
+        
+        final_tokens = repeated_tokens[:self.prompt_length]
+        long_prompt_text = self.tokenizer.decode(final_tokens, skip_special_tokens=True)
+        return [long_prompt_text] * batch_size
+
+    def encode(self, input_texts: list) -> np.ndarray:
+        with torch.no_grad():
+            # 将文本列表分词，并移动到GPU
+            batch_dict = self.tokenizer(
+                input_texts, 
+                max_length=4096,  # e5-mistral支持长达4096的上下文
+                padding=True, 
+                truncation=True, 
+                return_tensors='pt'
+            ).to(self.device)
+            outputs = self.model(**batch_dict)
+            embeddings = self.last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
+            vecs = F.normalize(embeddings, p=2, dim=1)   
 
         # 转换成 numpy 数组
         if hasattr(vecs, "detach"):
-            vecs = vecs.detach().cpu().numpy()
+            vecs = vecs.detach().to(torch.float32).cpu().numpy()
         elif isinstance(vecs, list):
             vecs = np.asarray(vecs, dtype=np.float32)
         return vecs.astype(np.float32)
@@ -157,7 +132,7 @@ def calculate_percentiles(arr: List[float], percentiles: List[int] = [90, 95, 99
     return {f"p{p}": val for p, val in zip(percentiles, percentile_values)}
 
 # -------- 测量原语 --------
-def measure_embedding_only(component: EmbeddingComponent, queries: list, query_type: str) -> float:
+def measure_embedding_only(component: NewEmbeddingComponent, queries: list, query_type: str) -> float:
     maybe_cuda_sync()
     t0 = now()
     with nvtx.annotate(f"embedding {query_type} | {len(queries)}", color="red"):
@@ -173,25 +148,23 @@ def measure_search_only(component: SearchComponent, query_vectors: np.ndarray) -
     maybe_cuda_sync()
     return now() - t0
 
-def measure_end2end(embedding_comp: EmbeddingComponent, search_comp: SearchComponent, queries: list, query_type: str) -> float:
+def measure_end2end(embedding_comp: NewEmbeddingComponent, search_comp: SearchComponent, queries: list, query_type: str) -> float:
     maybe_cuda_sync()
     t0 = now()
     with nvtx.annotate(f"e2e embedding {query_type} | {len(queries)}", color="red"):
-        query_vectors = embedding_comp.encode(queries, query_type)
+        query_vectors = embedding_comp.encode(queries)
     with nvtx.annotate(f"e2e search | {len(query_vectors)}", color="green"):
         _ = search_comp.search(query_vectors)
     maybe_cuda_sync()
     return now() - t0
 
-# -------- 辅助函数 --------
-def expand_batch(base_samples: List, bsz: int) -> List:
-    return base_samples * bsz
+
 
 def make_search_only_queries(
     dim: int,
     bsz: int,
     source: str = "gaussian",
-    embedding_comp: EmbeddingComponent = None,
+    embedding_comp: NewEmbeddingComponent = None,
     text_seed: str = "a dog",
     image_seed_path: str = None
 ) -> np.ndarray:
@@ -214,7 +187,7 @@ def make_search_only_queries(
     raise ValueError(f"未知的 source: {source}")
 
 def run_benchmark(
-    target_component: Union[EmbeddingComponent, SearchComponent, Tuple[EmbeddingComponent, SearchComponent]],
+    target_component: Union[NewEmbeddingComponent, SearchComponent, Tuple[NewEmbeddingComponent, SearchComponent]],
     mode: str,
     base_queries: List[str], # 这里仍然是字符串列表，可以是文本或路径
     query_type: str,
@@ -235,15 +208,17 @@ def run_benchmark(
         if bsz == 0: continue
         totals = []
         
-        if mode in ("end2end", "embedding"):
-            queries = expand_batch(base_queries, bsz)
 
+        if mode == "end2end":
+            queries = target_component[0].expand_batch(bsz)
+        if  mode == "embedding":
+            queries = target_component.expand_batch(bsz)
         # 预热
         for _ in range(warmup):
             if mode == "end2end":
                 measure_end2end(target_component[0], target_component[1], queries, query_type)
             elif mode == "embedding":
-                measure_embedding_only(target_component, queries, query_type)
+                measure_embedding_only(target_component, queries)
             else: # search
                 qv = make_search_only_queries(dim, bsz, search_only_source, image_seed_path=image_seed_path)
                 measure_search_only(target_component, qv)
@@ -253,7 +228,7 @@ def run_benchmark(
             if mode == "end2end":
                 total = measure_end2end(target_component[0], target_component[1], queries, query_type)
             elif mode == "embedding":
-                total = measure_embedding_only(target_component, queries, query_type)
+                total = measure_embedding_only(target_component, queries)
             else: # search
                 embedding_comp_for_query_gen = target_component[0] if mode == 'end2end' else None
                 qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
@@ -291,9 +266,8 @@ def parse_args():
     ap = argparse.ArgumentParser(description="RAG 延迟基准测试 (支持图片和文本)")
     
     # 文件路径
-    ap.add_argument("--embedding_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_embeddings.npy")
-    ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector/all_metadata.feather")
-    ap.add_argument("--model_path", type=str, default="/home/judy/wjj/ViT-L-14.pt")
+    ap.add_argument("--embedding_file", type=str, default="/home/judy/wjj/cocodataset/vector4096/all_embeddings.npy")
+    ap.add_argument("--metadata_file", type=str, default="/home/judy/wjj/cocodataset/vector4096/all_metadata.feather")
     
     # 运行配置
     ap.add_argument("--mode", type=str, default="end2end", choices=["embedding", "search", "end2end"])
@@ -303,8 +277,9 @@ def parse_args():
     ap.add_argument("--text_query", type=str, default="a dog playing on the beach", help="当 query_type='text' 时使用的基础查询文本。")
     ap.add_argument("--image_query", type=str, default="/home/judy/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
     # default=[1000, 3000,5000]+[i for i in range(10000,100000,10000)]
-    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(1000,100000,1000)])
-    ap.add_argument("--repeats", type=int, default=100)
+    ap.add_argument("--prompt_length", type=int, default=128)
+    ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(100,1000,100)])
+    ap.add_argument("--repeats", type=int, default=10)
     ap.add_argument("--warmup", type=int, default=2)
     ap.add_argument("--outdir", type=str, default="./outputs_simplified")
     ap.add_argument("--search_only_source", type=str, default="gaussian", choices=["encode", "gaussian"])
@@ -340,12 +315,12 @@ def main():
     print("-" * 40)
 
     if args.mode in ["embedding", "end2end"]:
-        embedding_comp = EmbeddingComponent(args.model_path)
+        embedding_comp = NewEmbeddingComponent(args.prompt_length)
     
     if args.mode in ["search", "end2end"]:
         if args.search_only_source == 'encode' and not embedding_comp:
             print("[注意] search-only 模式使用 'encode' 源，需要临时加载 embedding 模型...")
-            embedding_comp = EmbeddingComponent(args.model_path)
+            embedding_comp = NewEmbeddingComponent(args.prompt_length)
         search_comp = SearchComponent(args.embedding_file, args.metadata_file)
 
     if args.mode == "embedding":
