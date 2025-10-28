@@ -91,5 +91,7 @@ Nsight System Profiler CIL :
     python stress_test.py
 
    ```
+ HF_ENDPOINT=https://hf-mirror.com hfd intfloat/e5-mistral-7b-instruct
+ HF_ENDPOINT=https://hf-mirror.com hfd HuggingFaceM4/idefics2-8b 
 
-
+https://hf-mirror.com/HuggingFaceM4/idefics2-8b
