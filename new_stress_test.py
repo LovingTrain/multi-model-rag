@@ -11,17 +11,12 @@ from transformers import AutoTokenizer, AutoModel
 
 import nvtx
 import torch.nn.functional as F
-# 导入 Pillow 库用于处理图片
-try:
-    from PIL import Image
-except ImportError:
-    print("错误: Pillow 库未安装。请运行 'pip install Pillow' 来安装。")
-    exit(1)
+import threading
 
-# 假设您的原始模块在 src 文件夹下
-from src.encode_mode import EmbeddingMode
+
+
 from src.search_faiss import FaissSearcher
-
+from utils import *
 
 
 class NewEmbeddingComponent:
@@ -118,18 +113,7 @@ class SearchComponent:
 # 2. 基准测试工具函数 (大部分保持不变)
 # -------------------------------------------------------------------
 
-def now() -> float:
-    return time.perf_counter()
 
-def maybe_cuda_sync():
-    if torch.cuda.is_available():
-        torch.cuda.synchronize()
-
-def calculate_percentiles(arr: List[float], percentiles: List[int] = [90, 95, 99]) -> Dict[str, float]:
-    if not arr: return {f"p{p}": float("nan") for p in percentiles}
-    data = np.asarray(arr, dtype=float)
-    percentile_values = np.percentile(data, percentiles)
-    return {f"p{p}": val for p, val in zip(percentiles, percentile_values)}
 
 # -------- 测量原语 --------
 def measure_embedding_only(component: NewEmbeddingComponent, queries: list, query_type: str) -> float:
@@ -158,6 +142,162 @@ def measure_end2end(embedding_comp: NewEmbeddingComponent, search_comp: SearchCo
     maybe_cuda_sync()
     return now() - t0
 
+def measure_fused_embed(embedding_comp: NewEmbeddingComponent, search_comp: SearchComponent, queries: list, query_type: str) -> float:
+    maybe_cuda_sync()
+    t0 = now()
+    query_vectors = embedding_comp.encode(queries)
+    _ = search_comp.search(query_vectors[0:1])
+    maybe_cuda_sync()
+    return now() - t0
+
+def measure_fused_search(embedding_comp: NewEmbeddingComponent, search_comp: SearchComponent, queries: list, query_type: str) -> float:
+    maybe_cuda_sync()
+    t0 = now()
+    query_vectors = embedding_comp.encode(queries)
+    _ = search_comp.search(query_vectors[0:1])
+    maybe_cuda_sync()
+    return now() - t0
+
+
+# ******************************************************************************
+def background_search_task(
+    search_comp: 'SearchComponent', 
+    query_vectors: np.ndarray, 
+    stop_event: threading.Event
+):
+
+    while not stop_event.is_set():
+        # 使用 NVTX 来标记这个后台任务，方便在性能分析工具中查看
+        with nvtx.annotate("bg_search", color="orange"):
+            # 在后台持续执行搜索操作，以产生稳定的 GPU 负载
+            _ = search_comp.search(query_vectors)
+
+def background_embedding_task(
+    embedding_comp: 'NewEmbeddingComponent', 
+    queries: List[str], 
+    stop_event: threading.Event
+):
+
+    while not stop_event.is_set():
+
+         _ = embedding_comp.encode(queries)
+
+def measure_embedding_with_concurrent_search(
+    embedding_comp: 'NewEmbeddingComponent', 
+    search_comp: 'SearchComponent', 
+    queries: list
+) -> float:
+
+    stop_event = threading.Event()
+    
+    background_query_vectors = make_search_only_queries(dim=search_comp.dim, bsz=100, source="gaussian")
+    
+    # 3. 启动后台线程
+    # 我们创建一个新线程。`target` 是这个线程将要执行的函数。
+    # `args` 是传递给目标函数的参数。
+    search_thread = threading.Thread(
+        target=background_search_task,
+        args=(search_comp, background_query_vectors, stop_event)
+    )
+    # `start()` 会在新创建的线程中启动 `background_search_task` 函数的执行，
+    # 使其与主线程并行运行。
+    search_thread.start()
+    
+    # 4. 确保后台负载已激活
+    # 我们短暂地暂停主线程。这是一个很实用的步骤，目的是给操作系统一些时间来调度
+    # 新的线程，并让后台的第一个搜索操作有机会开始，从而确保当我们开始测量时，
+    # GPU 已经处于负载状态。
+    time.sleep(0.2) 
+    
+    # 5. 核心测量环节
+    # 这是我们测量主任务延迟的关键部分。
+    maybe_cuda_sync()  # 确保所有之前的 GPU 指令（比如搜索任务的启动）都已完成。
+    t0 = now()         # 记录开始时间。
+    
+    _ = embedding_comp.encode(queries)
+        
+    maybe_cuda_sync()  # 确保 `encode` 操作在 GPU 上完全完成后，再记录结束时间。
+    latency = now() - t0 # 计算总耗时。
+    
+    # 6. 清理工作
+    # 通知后台线程它应该停止工作了。
+    # `background_search_task` 函数中的 `while not stop_event.is_set()` 循环将会退出。
+    stop_event.set()
+    
+    # 等待后台线程完全执行完毕。
+    # 这对于干净的资源管理至关重要，并能确保后台任务不会“泄漏”到
+    # 后续的测量中。
+    search_thread.join()
+    
+    return latency
+
+def measure_search_with_concurrent_embedding(
+    embedding_comp: 'NewEmbeddingComponent', 
+    search_comp: 'SearchComponent', 
+    query_vectors: np.ndarray
+) -> float:
+    """
+    测量在一个嵌入任务于后台并发运行时，搜索任务的延迟。
+    此函数旨在模拟 GPU 资源争用（contention）的场景。
+
+    这个函数模拟了“带有一个嵌入任务的搜索”场景。
+
+    Args:
+        embedding_comp: 用于后台任务（编码文本）的组件。
+        search_comp: 用于主任务（向量搜索）的组件。
+        query_vectors: 需要被搜索的输入向量。
+
+    Returns:
+        在并发负载下，搜索任务的延迟（单位：秒）。
+    """
+    # 1. 并发控制设置
+    # 同样，我们使用 threading.Event 来作为后台线程的“停止信号”。
+    stop_event = threading.Event()
+    
+    # 2. 准备后台负载
+    # 这一次，后台任务是嵌入。我们需要准备一批文本数据来持续地
+    # 输入给嵌入模型，以产生稳定的 GPU 负载。
+    # 批处理大小（如 32）是根据典型嵌入任务的负载来选择的。
+    background_text_queries = NewEmbeddingComponent.expand_batch(batch_size=100)
+    
+    # 3. 启动后台线程
+    # 创建一个新线程，但这次的目标函数是 `background_embedding_task`，
+    # 它会持续不断地执行嵌入操作。
+    embedding_thread = threading.Thread(
+        target=background_embedding_task,
+        args=(embedding_comp, background_text_queries, stop_event)
+    )
+    # 启动后台嵌入线程，使其与主线程并行运行。
+    embedding_thread.start()
+    
+    # 4. 确保后台负载已激活
+    # 同样，暂停主线程一小段时间，以确保后台的嵌入任务已经开始运行，
+    # 使得 GPU 在我们开始测量前就处于负载状态。
+    time.sleep(0.2)
+    
+    # 5. 核心测量环节
+    # 这是测量搜索任务在压力下延迟的关键部分。
+    maybe_cuda_sync()  # 确保 GPU 空闲，准备好接收我们的搜索任务。
+    t0 = now()         # 记录开始时间。
+    
+    # 使用 nvtx 进行性能分析可视化，颜色设为绿色以区分。
+    with nvtx.annotate(f"search_with_embedding | {len(query_vectors)}", color="green"):
+        # 执行主任务：进行向量搜索。
+        # 这个搜索操作现在必须与后台线程中运行的 `encode` 操作
+        # 竞争 GPU 资源。
+        _ = search_comp.search(query_vectors)
+        
+    maybe_cuda_sync()  # 确保搜索任务在 GPU 上完全完成后，再记录结束时间。
+    latency = now() - t0 # 计算总耗时。
+    
+    # 6. 清理工作
+    # 测量完成，通知后台的嵌入线程停止。
+    stop_event.set()
+    
+
+    embedding_thread.join()
+    
+    return latency
 
 
 def make_search_only_queries(
@@ -222,7 +362,7 @@ def run_benchmark(
             else: # search
                 qv = make_search_only_queries(dim, bsz, search_only_source, image_seed_path=image_seed_path)
                 measure_search_only(target_component, qv)
-        torch.cuda.empty_cache() 
+
         # 正式重复
         for _ in range(repeats):
             if mode == "end2end":
@@ -234,7 +374,7 @@ def run_benchmark(
                 qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
                 total = measure_search_only(target_component, qv)
             totals.append(total)
-        torch.cuda.empty_cache()    
+
 
         if not totals: continue
 
@@ -257,6 +397,75 @@ def run_benchmark(
     return results
 
 
+def run_fused_benchmark(
+    target_component: Union[NewEmbeddingComponent, SearchComponent, Tuple[NewEmbeddingComponent, SearchComponent]],
+    mode: str,
+    base_queries: List[str], # 这里仍然是字符串列表，可以是文本或路径
+    query_type: str,
+    batch_sizes: List[int],
+    repeats: int,
+    warmup: int,
+    search_only_source: str = "encode",
+    image_seed_path: str = None ,# 传递图片种子路径
+    dim=4096
+) -> List[Dict]:
+    results = []
+    
+    # dim = 768
+    if mode == 'search': dim = target_component.dim
+    elif mode == 'end2end': dim = target_component[1].dim
+
+    for bsz in batch_sizes:
+        if bsz == 0: continue
+        totals = []
+        
+
+        if mode == "end2end":
+            queries = target_component[0].expand_batch(bsz)
+        if  mode == "embedding":
+            queries = target_component.expand_batch(bsz)
+        # 预热
+        for _ in range(warmup):
+            if mode == "end2end":
+                measure_end2end(target_component[0], target_component[1], queries, query_type)
+            elif mode == "embedding":
+                measure_embedding_only(target_component, queries)
+            else: # search
+                qv = make_search_only_queries(dim, bsz, search_only_source, image_seed_path=image_seed_path)
+                measure_search_only(target_component, qv)
+
+        # 正式重复
+        for _ in range(repeats):
+            if mode == "end2end":
+                total = measure_end2end(target_component[0], target_component[1], queries, query_type)
+            elif mode == "embedding":
+                total = measure_embedding_only(target_component, queries)
+            else: # search
+                embedding_comp_for_query_gen = target_component[0] if mode == 'end2end' else None
+                qv = make_search_only_queries(dim, bsz, search_only_source, embedding_comp=embedding_comp_for_query_gen, image_seed_path=image_seed_path)
+                total = measure_search_only(target_component, qv)
+            totals.append(total)
+
+
+        if not totals: continue
+
+        percentile_results = calculate_percentiles(totals, [50,90, 95, 99])
+        rec = {
+            "mode": mode, "batch_size": bsz,
+            "avg_total_s": float(np.mean(totals)),
+            "avg_per_sample_s": float(np.mean(totals)) / bsz,
+        }
+        rec.update({f"{k}_total_s": v for k, v in percentile_results.items()})
+
+        p_str = " | ".join([f"p{p}={v:.5f}s" for p, v in percentile_results.items()])
+        print(
+            f"[{mode:<9} bsz={bsz:<5d}] "
+            f"Avg Total: {rec['avg_total_s']:.5f}s | "
+            f"Avg Per-Sample: {rec['avg_per_sample_s']:.8f}s | "
+            f"Percentiles: [ {p_str} ]"
+        )
+        results.append(rec)
+    return results
 
 # -------------------------------------------------------------------
 # 3. 主程序入口
@@ -278,6 +487,7 @@ def parse_args():
     ap.add_argument("--image_query", type=str, default="/home/judy/wjj/multi-model-rag/data/space.png", help="当 query_type='image' 时使用的基础查询图片路径。")
     # default=[1000, 3000,5000]+[i for i in range(10000,100000,10000)]
     ap.add_argument("--prompt_length", type=int, default=128)
+
     ap.add_argument("--batch_sizes", type=int, nargs="+", default= [i for i in range(100,1000,100)])
     ap.add_argument("--repeats", type=int, default=10)
     ap.add_argument("--warmup", type=int, default=2)
