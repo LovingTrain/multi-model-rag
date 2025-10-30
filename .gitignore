@@ -3,4 +3,4 @@ data/
 output_nsys/
 CLIP/
 outputs/
-multi-model-rag/e5-mistral-7b-instruct/
+e5-mistral-7b-instruct/
