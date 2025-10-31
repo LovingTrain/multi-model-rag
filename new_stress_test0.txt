@@ -4,54 +4,19 @@
 ======================================================================
 >>> [2025-10-30 00:10:27] EXECUTING COMMAND 1 / 11:
 >>> python new_stress_test.py --mode end2end --batch_sizes 100 200 300 400 500 600 
-----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /intfloat/e5-mistral-7b-instruct/resolve/main/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: e6ad219c-0b16-40bb-9793-752c24f7bdb9)')' thrown while requesting HEAD https://huggingface.co/intfloat/e5-mistral-7b-instruct/resolve/main/tokenizer_config.json
-Retrying in 1s [Retry 1/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: d5be6e90-424a-4cee-9199-ff39df37c1f3)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 1s [Retry 1/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: f4fc62a4-c62e-476f-bc7f-9d6824c97db9)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 2s [Retry 2/5].
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: END2END
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.53s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.01s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.09s/it]
-[组件] EmbeddingComponent 初始化完成。
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
 [end2end   bsz=100  ] Avg Total: 0.94994s | Avg Per-Sample: 0.00949939s | Percentiles: [ pp50=0.94963s | pp90=0.95280s | pp95=0.95328s | pp99=0.95477s ]
 [end2end   bsz=200  ] Avg Total: 1.90373s | Avg Per-Sample: 0.00951867s | Percentiles: [ pp50=1.90382s | pp90=1.90975s | pp95=1.91126s | pp99=1.91325s ]
 [end2end   bsz=300  ] Avg Total: 2.82363s | Avg Per-Sample: 0.00941212s | Percentiles: [ pp50=2.82317s | pp90=2.82573s | pp95=2.82593s | pp99=2.82642s ]
 [end2end   bsz=400  ] Avg Total: 3.77481s | Avg Per-Sample: 0.00943703s | Percentiles: [ pp50=3.77450s | pp90=3.77680s | pp95=3.77728s | pp99=3.77839s ]
 [end2end   bsz=500  ] Avg Total: 4.68867s | Avg Per-Sample: 0.00937733s | Percentiles: [ pp50=4.68608s | pp90=4.69700s | pp95=4.70025s | pp99=4.70330s ]
 [end2end   bsz=600  ] Avg Total: 5.64495s | Avg Per-Sample: 0.00940826s | Percentiles: [ pp50=5.64536s | pp90=5.65025s | pp95=5.65100s | pp99=5.65440s ]
---- Command completed successfully (exit code: 0) ---
-
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 00:49:41 左右开始执行。
-----------------------------------------------------------------------
+????????? OutOfMemoryError??
 
 ======================================================================
 >>> [2025-10-30 00:49:41] EXECUTING COMMAND 2 / 11:
 >>> python new_stress_test.py --mode search --batch_sizes 100 200 300 400 500 600 700 800 900 1000
-----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: SEARCH
-----------------------------------------
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
+
 [search    bsz=100  ] Avg Total: 0.02731s | Avg Per-Sample: 0.00027315s | Percentiles: [ pp50=0.00040s | pp90=0.22068s | pp95=0.22498s | pp99=0.22778s ]
 [search    bsz=200  ] Avg Total: 0.04077s | Avg Per-Sample: 0.00020387s | Percentiles: [ pp50=0.00053s | pp90=0.22383s | pp95=0.22660s | pp99=0.22824s ]
 [search    bsz=300  ] Avg Total: 0.08506s | Avg Per-Sample: 0.00028352s | Percentiles: [ pp50=0.00070s | pp90=0.22396s | pp95=0.22577s | pp99=0.22712s ]
@@ -62,43 +27,12 @@ Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00
 [search    bsz=800  ] Avg Total: 0.16685s | Avg Per-Sample: 0.00020856s | Percentiles: [ pp50=0.22339s | pp90=0.22793s | pp95=0.22957s | pp99=0.23067s ]
 [search    bsz=900  ] Avg Total: 0.17341s | Avg Per-Sample: 0.00019267s | Percentiles: [ pp50=0.22277s | pp90=0.22785s | pp95=0.22892s | pp99=0.23183s ]
 [search    bsz=1000 ] Avg Total: 0.17377s | Avg Per-Sample: 0.00017377s | Percentiles: [ pp50=0.22338s | pp90=0.22823s | pp95=0.22981s | pp99=0.23191s ]
---- Command completed successfully (exit code: 0) ---
 
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 00:57:13 左右开始执行。
-----------------------------------------------------------------------
 
-======================================================================
->>> [2025-10-30 00:57:13] EXECUTING COMMAND 3 / 11:
+
 >>> python new_stress_test.py --mode embedding --batch_sizes 100 200 300 400 500 600 700 800 900
 ----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /intfloat/e5-mistral-7b-instruct/resolve/main/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: 06e42e67-1120-491d-b630-51924c633f7e)')' thrown while requesting HEAD https://huggingface.co/intfloat/e5-mistral-7b-instruct/resolve/main/tokenizer_config.json
-Retrying in 1s [Retry 1/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: f634b35b-2f06-46ef-8fdf-662a89a66f10)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 1s [Retry 1/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: 47bd94b8-cd6c-4783-b97a-621b09dc057c)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 2s [Retry 2/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: ee2aea26-4cd9-4025-8c90-2afda377d460)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 4s [Retry 3/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: b21f32e3-1c83-4998-a414-20cc9365ea01)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 8s [Retry 4/5].
-'(MaxRetryError("HTTPSConnectionPool(host='huggingface.co', port=443): Max retries exceeded with url: /api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1016)')))"), '(Request ID: 57d3a94b-0be4-4d83-aa56-5072c13cf532)')' thrown while requesting HEAD https://huggingface.co/api/resolve-cache/models/intfloat/e5-mistral-7b-instruct/07163b72af1488142a360786df853f237b1a3ca1/tokenizer_config.json
-Retrying in 8s [Retry 5/5].
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: EMBEDDING
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.61s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.06s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.14s/it]
-[组件] EmbeddingComponent 初始化完成。
 [embedding bsz=100  ] Avg Total: 0.94914s | Avg Per-Sample: 0.00949141s | Percentiles: [ pp50=0.94881s | pp90=0.95221s | pp95=0.95240s | pp99=0.95325s ]
 [embedding bsz=200  ] Avg Total: 1.90385s | Avg Per-Sample: 0.00951924s | Percentiles: [ pp50=1.90472s | pp90=1.90817s | pp95=1.90949s | pp99=1.91130s ]
 [embedding bsz=300  ] Avg Total: 2.82406s | Avg Per-Sample: 0.00941352s | Percentiles: [ pp50=2.82358s | pp90=2.82769s | pp95=2.82877s | pp99=2.83034s ]
@@ -110,31 +44,11 @@ Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00
 [embedding bsz=900  ] Avg Total: 8.45982s | Avg Per-Sample: 0.00939980s | Percentiles: [ pp50=8.45604s | pp90=8.46986s | pp95=8.47279s | pp99=8.55720s ]
 --- Command completed successfully (exit code: 0) ---
 
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 02:15:07 左右开始执行。
-----------------------------------------------------------------------
 
-======================================================================
->>> [2025-10-30 02:15:07] EXECUTING COMMAND 4 / 11:
 >>> python new_stress_test.py --mode with_search --batch_sizes 100 200 300 400 500 600
 ----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: WITH_SEARCH
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.55s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.02s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.10s/it]
-[组件] EmbeddingComponent 初始化完成。
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
+
 [with_search bsz=100  ] Avg Total: 13.05174s | Avg Per-Sample: 0.13051736s | Percentiles: [ pp50=0.95878s | pp90=84.48346s | pp95=96.51037s | pp99=101.28341s ]
 [with_search bsz=200  ] Avg Total: 15.33680s | Avg Per-Sample: 0.07668398s | Percentiles: [ pp50=1.89951s | pp90=103.91234s | pp95=107.04871s | pp99=110.01054s ]
 [with_search bsz=300  ] Avg Total: 16.44590s | Avg Per-Sample: 0.05481967s | Percentiles: [ pp50=2.81296s | pp90=103.02212s | pp95=108.88631s | pp99=115.28276s ]
@@ -143,31 +57,12 @@ Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00
 [with_search bsz=600  ] Avg Total: 19.13883s | Avg Per-Sample: 0.03189805s | Percentiles: [ pp50=5.61144s | pp90=105.13764s | pp95=110.62663s | pp99=116.33416s ]
 --- Command completed successfully (exit code: 0) ---
 
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 05:18:48 左右开始执行。
-----------------------------------------------------------------------
 
 ======================================================================
 >>> [2025-10-30 05:18:48] EXECUTING COMMAND 5 / 11:
 >>> python new_stress_test.py --mode with_embedding --batch_sizes 100 200 300 400 500 600 700
 ----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: WITH_EMBEDDING
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.57s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.06s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.13s/it]
-[组件] EmbeddingComponent 初始化完成。
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
 [with_embedding bsz=100  ] Avg Total: 0.03644s | Avg Per-Sample: 0.00036435s | Percentiles: [ pp50=0.00086s | pp90=0.22270s | pp95=0.22427s | pp99=0.22602s ]
 [with_embedding bsz=200  ] Avg Total: 0.06120s | Avg Per-Sample: 0.00030599s | Percentiles: [ pp50=0.00109s | pp90=0.22472s | pp95=0.22670s | pp99=0.22999s ]
 [with_embedding bsz=300  ] Avg Total: 0.07257s | Avg Per-Sample: 0.00024189s | Percentiles: [ pp50=0.00121s | pp90=0.22581s | pp95=0.22828s | pp99=0.23022s ]
@@ -189,57 +84,26 @@ Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00
 ======================================================================
 >>> [2025-10-30 05:42:41] EXECUTING COMMAND 6 / 11:
 >>> python new_stress_test.py --mode end2end --batch_sizes 10 20  40  60 80 100 120 140 160 --prompt_length 1024
-----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: END2END
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.63s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.09s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.17s/it]
-[组件] EmbeddingComponent 初始化完成。
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
 [end2end   bsz=10   ] Avg Total: 0.75937s | Avg Per-Sample: 0.07593682s | Percentiles: [ pp50=0.75900s | pp90=0.76143s | pp95=0.76185s | pp99=0.76320s ]
 [end2end   bsz=20   ] Avg Total: 1.53128s | Avg Per-Sample: 0.07656380s | Percentiles: [ pp50=1.53209s | pp90=1.53404s | pp95=1.53558s | pp99=1.53840s ]
 [end2end   bsz=40   ] Avg Total: 3.01510s | Avg Per-Sample: 0.07537738s | Percentiles: [ pp50=3.01493s | pp90=3.01627s | pp95=3.01699s | pp99=3.01797s ]
 [end2end   bsz=60   ] Avg Total: 4.50734s | Avg Per-Sample: 0.07512237s | Percentiles: [ pp50=4.50673s | pp90=4.50984s | pp95=4.51209s | pp99=4.51375s ]
 [end2end   bsz=80   ] Avg Total: 6.00695s | Avg Per-Sample: 0.07508690s | Percentiles: [ pp50=6.00678s | pp90=6.01015s | pp95=6.01063s | pp99=6.01172s ]
+
 Traceback (most recent call last):
 
                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
 torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 2.74 GiB. GPU 0 has a total capacity of 31.36 GiB of which 2.65 GiB is free. Including non-PyTorch memory, this process has 28.70 GiB memory in use. Of the allocated memory 21.87 GiB is allocated by PyTorch, and 2.92 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
 
 
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 06:14:53 左右开始执行。
-----------------------------------------------------------------------
+
 
 ======================================================================
 >>> [2025-10-30 06:14:53] EXECUTING COMMAND 7 / 11:
 >>> python new_stress_test.py --mode embedding --batch_sizes 10 20  40  60 80 100 120 140 160 --prompt_length 1024
-----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: EMBEDDING
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.64s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.09s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.17s/it]
-[组件] EmbeddingComponent 初始化完成。
+
 [embedding bsz=10   ] Avg Total: 0.75858s | Avg Per-Sample: 0.07585777s | Percentiles: [ pp50=0.75821s | pp90=0.76122s | pp95=0.76151s | pp99=0.76235s ]
 [embedding bsz=20   ] Avg Total: 1.53096s | Avg Per-Sample: 0.07654824s | Percentiles: [ pp50=1.53179s | pp90=1.53467s | pp95=1.53559s | pp99=1.53881s ]
 [embedding bsz=40   ] Avg Total: 3.01552s | Avg Per-Sample: 0.07538788s | Percentiles: [ pp50=3.01412s | pp90=3.01827s | pp95=3.02254s | pp99=3.02669s ]
@@ -251,31 +115,11 @@ Traceback (most recent call last):
 torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.29 GiB. GPU 0 has a total capacity of 31.36 GiB of which 1.60 GiB is free. Including non-PyTorch memory, this process has 29.75 GiB memory in use. Of the allocated memory 23.59 GiB is allocated by PyTorch, and 5.58 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
 
 
-----------------------------------------------------------------------
->>> 命令执行完毕，将休眠 5 分钟...
->>> 下一条命令将在 2025-10-30 06:59:38 左右开始执行。
-----------------------------------------------------------------------
 
 ======================================================================
 >>> [2025-10-30 06:59:38] EXECUTING COMMAND 8 / 11:
 >>> python new_stress_test.py --mode with_search --batch_sizes 10 20  40  60 80 100 120 140 160  --prompt_length 1024
-----------------------------------------------------------------------
-/home/judy/miniconda3/envs/rag/lib/python3.11/site-packages/torch/cuda/__init__.py:63: FutureWarning: The pynvml package is deprecated. Please install nvidia-ml-py instead. If you did not install pynvml directly, please report this to the maintainers of the package that installed pynvml for you.
-  import pynvml  # type: ignore[import]
-`torch_dtype` is deprecated! Use `dtype` instead!
-测试模式: 文本查询, 内容: 'a dog playing on the beach'
-----------------------------------------
-开始执行模式: WITH_SEARCH
-----------------------------------------
-[组件] 正在初始化 EmbeddingComponent...
 
-Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]
-Loading checkpoint shards:  50%|█████     | 1/2 [00:01<00:01,  1.61s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.07s/it]
-Loading checkpoint shards: 100%|██████████| 2/2 [00:02<00:00,  1.15s/it]
-[组件] EmbeddingComponent 初始化完成。
-[组件] 正在初始化 SearchComponent (仅限 GPU)...
-[组件] SearchComponent (GPU) 初始化完成。
 [with_search bsz=10   ] Avg Total: 14.94556s | Avg Per-Sample: 1.49455568s | Percentiles: [ pp50=0.77208s | pp90=97.95828s | pp95=104.59131s | pp99=108.18548s ]
 [with_search bsz=20   ] Avg Total: 14.47932s | Avg Per-Sample: 0.72396606s | Percentiles: [ pp50=1.53081s | pp90=97.47867s | pp95=102.32602s | pp99=108.99728s ]
 [with_search bsz=40   ] Avg Total: 18.11290s | Avg Per-Sample: 0.45282258s | Percentiles: [ pp50=3.00008s | pp90=101.07984s | pp95=104.27332s | pp99=111.67078s ]
